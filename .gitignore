@@ -1,0 +1,8 @@
+*~
+node_modules/
+dist/
+*.pyc
+coverage/
+.DS_Store
+package-lock.json
+.lambda/
