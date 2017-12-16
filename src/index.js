@@ -4,8 +4,6 @@ import AWS from 'aws-sdk';
 import axios from 'axios';
 import urlparse from 'url-parse';
 import uuidv4 from 'uuid/v4';
-import _ from 'lodash';
-import randomstring from 'randomstring';
 import createSagaMiddleware from 'redux-saga';
 import githubSaga from './github-saga';
 import reducers from './reducers';
@@ -20,7 +18,7 @@ import {
 
 const CONNECTIONS = 'connections';
 
-const increaseConcurrentExecutionCount = connection => sqlPromise(connection, 'UPDATE connections SET connections = connections + 1 WHERE id = ?;', [CONNECTIONS]);
+const increaseConcurrentExecutionCount = connection => sqlPromise(connection, 'INSERT INTO connections (id, connections) VALUES (?,?) ON DUPLICATE KEY UPDATE connections = connections + 1;', ['connections', 0]);
 
 export default async (event, context, callback) => {
   const connection = mysql.createConnection({
@@ -65,7 +63,7 @@ export default async (event, context, callback) => {
     store.dispatch(putEnv(process.env));
     store.dispatch(putCallback(callback))
     store.dispatch({
-      type: event._lambdaAction,
+      type: event._computationAction,
       payload: event
     });
   } catch (error) {

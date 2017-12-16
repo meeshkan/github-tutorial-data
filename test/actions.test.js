@@ -2,11 +2,11 @@ import {
   putConnection,
   putEnv,
   putCallback,
-  endLambda,
+  endComputation,
   PUT_CONNECTION,
   PUT_ENV,
   PUT_CALLBACK,
-  END_LAMBDA
+  END_COMPUTATION
 } from '../src/actions';
 
 test('put connection works', () => {
@@ -30,17 +30,17 @@ test('put callback works', () => {
   });
 });
 
-test('end lambda with error works', () => {
-  expect(endLambda('foo', 'bar')).toEqual({
-    type: END_LAMBDA,
+test('end computation with error works', () => {
+  expect(endComputation('foo', 'bar')).toEqual({
+    type: END_COMPUTATION,
     payload: 'foo',
     error: 'bar'
   });
 });
 
-test('end lambda without error works', () => {
-  expect(endLambda('foo')).toEqual({
-    type: END_LAMBDA,
+test('end computation without error works', () => {
+  expect(endComputation('foo')).toEqual({
+    type: END_COMPUTATION,
     payload: 'foo'
   });
 });

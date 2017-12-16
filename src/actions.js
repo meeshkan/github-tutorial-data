@@ -6,7 +6,7 @@ export const GET_COMMIT = "GET_COMMIT";
 export const PUT_CONNECTION = "PUT_CONNECTION";
 export const PUT_ENV = "PUT_ENV";
 export const PUT_CALLBACK = "PUT_CALLBACK";
-export const END_LAMBDA = "END_LAMBDA";
+export const END_COMPUTATION = "END_COMPUTATION";
 
 export const putConnection = connection => ({
   type: PUT_CONNECTION,
@@ -23,8 +23,8 @@ export const putCallback = callback => ({
   payload: callback
 });
 
-export const endLambda = (payload, error) => ({
-  type: END_LAMBDA,
+export const endComputation = (payload, error) => ({
+  type: END_COMPUTATION,
   payload,
   ...(error ? {error} : {})
 });
