@@ -5,22 +5,42 @@ export const GET_COMMITS = "GET_COMMITS";
 export const GET_COMMIT = "GET_COMMIT";
 export const PUT_CONNECTION = "PUT_CONNECTION";
 export const PUT_ENV = "PUT_ENV";
-export const PUT_CALLBACK = "PUT_CALLBACK";
-export const END_COMPUTATION = "END_COMPUTATION";
+export const GET_TASKS = "GET_TASKS";
+export const PUT_REMAINING = "PUT_REMAINING";
+export const DECREASE_REMAINING = "DECREASE_REMAINING";
+export const INCREASE_EXECUTION_COUNT = "INCREASE_EXECUTION_COUNT";
+export const DECREASE_EXECUTION_COUNT = "DECREASE_EXECUTION_COUNT";
 
-export const putConnection = connection => ({
+export const increaseExecutionCount = () => ({
+  type: INCREASE_EXECUTION_COUNT
+});
+
+export const decreaseExecutionCount = () => ({
+  type: DECREASE_EXECUTION_COUNT
+});
+
+export const putRemaining = payload => ({
+  type: PUT_REMAINING,
+  payload
+});
+
+export const decreaseRemaining = () => ({
+  type: DECREASE_REMAINING
+});
+
+export const getTasks = payload =>({
+  type: GET_TASKS,
+  payload
+});
+
+export const putConnection = payload => ({
   type: PUT_CONNECTION,
-  payload: connection
+  payload
 });
 
-export const putEnv = env => ({
+export const putEnv = payload => ({
   type: PUT_ENV,
-  payload: env
-});
-
-export const putCallback = callback => ({
-  type: PUT_CALLBACK,
-  payload: callback
+  payload
 });
 
 export const endComputation = (payload, error) => ({

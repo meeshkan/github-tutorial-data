@@ -1,46 +1,62 @@
 import {
   putConnection,
   putEnv,
-  putCallback,
-  endComputation,
+  increaseExecutionCount,
+  decreaseExecutionCount,
+  putRemaining,
+  decreaseRemaining,
+  getTasks,
+  GET_TASKS,
   PUT_CONNECTION,
   PUT_ENV,
-  PUT_CALLBACK,
-  END_COMPUTATION
+  INCREASE_EXECUTION_COUNT,
+  DECREASE_EXECUTION_COUNT,
+  PUT_REMAINING,
+  DECREASE_REMAINING
 } from '../src/actions';
 
-test('put connection works', () => {
+test('put connection', () => {
   expect(putConnection('connection')).toEqual({
     type: PUT_CONNECTION,
     payload: 'connection'
   })
 });
 
-test('put env works', () => {
+test('put env', () => {
   expect(putEnv('env')).toEqual({
     type: PUT_ENV,
     payload: 'env'
   })
 });
 
-test('put callback works', () => {
-  expect(putCallback('callback')).toEqual({
-    type: PUT_CALLBACK,
-    payload: 'callback'
-  });
+test('put remaining', () => {
+  expect(putRemaining(60)).toEqual({
+    type: PUT_REMAINING,
+    payload: 60
+  })
 });
 
-test('end computation with error works', () => {
-  expect(endComputation('foo', 'bar')).toEqual({
-    type: END_COMPUTATION,
-    payload: 'foo',
-    error: 'bar'
-  });
+test('decrease remaining', () => {
+  expect(decreaseRemaining()).toEqual({
+    type: DECREASE_REMAINING
+  })
 });
 
-test('end computation without error works', () => {
-  expect(endComputation('foo')).toEqual({
-    type: END_COMPUTATION,
-    payload: 'foo'
-  });
+test('increase execution count', () => {
+  expect(increaseExecutionCount()).toEqual({
+    type: INCREASE_EXECUTION_COUNT
+  })
 });
+
+test('decrease execution count', () => {
+  expect(decreaseExecutionCount()).toEqual({
+    type: DECREASE_EXECUTION_COUNT
+  })
+});
+
+test('get tasks', () => {
+  expect(getTasks(5)).toEqual({
+    type: GET_TASKS,
+    payload: 5
+  });
+})
