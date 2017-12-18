@@ -1,5 +1,5 @@
 {
-  "name": "githubtutorial",
+  "name": "github-tutorial-data",
   "version": "0.0.0",
   "description": "Asks the octocat nicely for information about the Github API",
   "main": "index.js",
