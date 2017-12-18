@@ -4,7 +4,7 @@ import {
   GET_LAST,
   GET_COMMIT,
   GET_COMMITS,
-  GET_SINGLE_TASK,
+  GET_TASKS,
   getTasks,
   decreaseRemaining,
   increaseExecutionCount,
@@ -231,11 +231,11 @@ export function* getRepoSideEffect(action) {
     const repo = yield call(axios, `${env.GITHUB_API}/repos/${payload._computationOwner}/${payload._computationRepo}`);
     const fork = repo && repo.data ? repo.data.fork : null;
     if (fork) {
-      return; // we do not use forks
+      throw new Error("no forks allowed"); // we do not use forks
     }
     const id = repo && repo.data ? parseInt(repo.data.id) : null;
     if (id === null) {
-      return; // cannot insert into the DB without an id
+      throw new Error("no id error"); // cannot insert into the DB without an id
     }
     const owner_login = repo && repo.data && repo.data.owner ? repo.data.owner.login : null;
     const owner_id = repo && repo.data && repo.data.owner ? parseInt(repo.data.owner.id) : null;
@@ -421,7 +421,7 @@ export function* getCommitSideEffect(action) {
     const commit = yield call(axios, `${env.GITHUB_API}/repos/${payload._computationOwner}/${payload._computationRepo}/commits/${payload._computationSHA}`);
     const sha = commit && commit.data ? commit.data.sha : null;
     if (sha === null) {
-      return; // cannot insert into the DB without an sha
+      throw new Error("no sha error"); // cannot insert into the DB without an sha
     }
     const repo_id = parseInt(payload._computationId);
     const author_name = commit && commit.data && commit.data.commit && commit.data.commit.author ? commit.data.commit.author.name : null;
@@ -452,12 +452,12 @@ export function* getCommitSideEffect(action) {
 }
 
 function* githubSaga() {
-  takeEvery(GET_LAST, getLastSideEffect);
-  takeEvery(GET_COMMIT, getCommitSideEffect);
-  takeEvery(GET_COMMITS, getCommitsSideEffect);
-  takeEvery(GET_REPO, getRepoSideEffect);
-  takeEvery(GET_REPOS, getReposSideEffect);
-  takeEvery(GET_TASKS, getTasksSideEffect);
+  yield takeEvery(GET_LAST, getLastSideEffect);
+  yield takeEvery(GET_COMMIT, getCommitSideEffect);
+  yield takeEvery(GET_COMMITS, getCommitsSideEffect);
+  yield takeEvery(GET_REPO, getRepoSideEffect);
+  yield takeEvery(GET_REPOS, getReposSideEffect);
+  yield takeEvery(GET_TASKS, getTasksSideEffect);
 }
 
 export default githubSaga;

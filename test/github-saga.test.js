@@ -8,7 +8,7 @@ import {
   MOCK_GET_COMMITS_DATA
 } from './mock-data';
 
-import {
+import githubSaga, {
   getRepoSideEffect,
   getCommitSideEffect,
   getLastSideEffect,
@@ -1069,7 +1069,7 @@ shutdown -h now
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 
-test('begin saga part with capacity', ()=>{
+test('begin saga part with capacity', () => {
   const gen = beginSagaPart({});
   expect(gen.next().value).toEqual(put({
     type: INCREASE_EXECUTION_COUNT
@@ -1088,7 +1088,7 @@ test('begin saga part with capacity', ()=>{
   expect(done).toEqual(true);
 });
 
-test('begin saga part without capacity', ()=>{
+test('begin saga part without capacity', () => {
   const gen = beginSagaPart({
     type: 'foo',
     payload: 'bar'
@@ -1116,7 +1116,7 @@ test('begin saga part without capacity', ()=>{
   expect(done).toEqual(true);
 });
 
-test('get tasks side effect', ()=>{
+test('get tasks side effect', () => {
   const gen = getTasksSideEffect({
     payload: 3
   });
@@ -1124,13 +1124,53 @@ test('get tasks side effect', ()=>{
   expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
   ///DELETE FROM deferred WHERE
-  expect(gen.next([
-    {id: 'x', json: '{"a":"b"}'},
-    {id: 'y', json: '{"c":"d"}'},
-    {id: 'z', json: '{"e":"f"}'},
-  ]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ? OR id = ? OR id = ?;', ['x','y','z']));
-  expect(gen.next().value).toEqual(put({"a":"b"}));
-  expect(gen.next().value).toEqual(put({"c":"d"}));
-  expect(gen.next().value).toEqual(put({"e":"f"}));
+  expect(gen.next([{
+      id: 'x',
+      json: '{"a":"b"}'
+    },
+    {
+      id: 'y',
+      json: '{"c":"d"}'
+    },
+    {
+      id: 'z',
+      json: '{"e":"f"}'
+    },
+  ]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ? OR id = ? OR id = ?;', ['x', 'y', 'z']));
+  expect(gen.next().value).toEqual(put({
+    "a": "b"
+  }));
+  expect(gen.next().value).toEqual(put({
+    "c": "d"
+  }));
+  expect(gen.next().value).toEqual(put({
+    "e": "f"
+  }));
   expect(gen.next().done).toEqual(true);
+});
+
+test('github saga', () => {
+  const gen = githubSaga();
+  const fullSaga = [
+    gen.next(),
+    gen.next(),
+    gen.next(),
+    gen.next(),
+    gen.next(),
+    gen.next()
+  ].map(x => x.value);
+  const sagaParts = [
+    takeEvery(GET_LAST, getLastSideEffect),
+    takeEvery(GET_COMMIT, getCommitSideEffect),
+    takeEvery(GET_COMMITS, getCommitsSideEffect),
+    takeEvery(GET_REPO, getRepoSideEffect),
+    takeEvery(GET_REPOS, getReposSideEffect),
+    takeEvery(GET_TASKS, getTasksSideEffect)
+  ];
+  let i = 0;
+  for (; i < sagaParts.length; i++) {
+    expect(fullSaga[i]).toEqual(sagaParts[i]);
+  }
+  expect(fullSaga.length).toBe(sagaParts.length);
+  expect(gen.next().done).toBe(true);
 });
