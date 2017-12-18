@@ -11,6 +11,8 @@ import {
   decreaseExecutionCount
 } from './actions';
 
+import Raven from 'raven';
+
 import uuidv4 from 'uuid/v4';
 
 import crypto from 'crypto';
@@ -52,12 +54,6 @@ import AWS from 'aws-sdk';
 
 export const stateSelector = $ => $;
 
-export const reportErrorToSNS = (env, error) => new Promise((resolve, reject) => new AWS.SNS({
-  region: 'us-east-1'
-}).publish({
-  Message: `${error.stack}`,
-  TopicArn: env.ERROR_TOPIC_ARN
-}, (e, r) => e ? reject(e) : resolve(r)));
 export const createFunction = params => new Promise((resolve, reject) => new AWS.EC2({
   region: 'us-east-1'
 }).requestSpotInstances(params, (e, r) => e ? reject(e) : resolve(r)));
@@ -118,6 +114,7 @@ export function* endSagaPart() {
       // we don't need the connection anymore, so we release it to the pool
       yield call(destroy, connection);
       const USER_DATA = `#!/bin/bash
+export RAVEN_URL="${env.RAVEN_URL}" && \
 export MY_SQL_HOST="${env.MY_SQL_HOST}" && \
 export MY_SQL_PORT="${env.MY_SQL_PORT}" && \
 export MY_SQL_USERNAME="${env.MY_SQL_USERNAME}" && \
@@ -173,7 +170,7 @@ shutdown -h now
       }
     } catch (e) {
       yield call(rollbackTransaction, connection);
-      yield call(reportErrorToSNS, env, e);
+      Raven.captureException(e);
       yield call(destroy, connection);
     } finally {
       // a forced exit would be necessary if, for example, the connection does not close
@@ -193,7 +190,7 @@ export function* getTasksSideEffect(action) {
   try {
     yield call(beginTransaction, connection);
   } catch (e) {
-    yield call(reportErrorToSNS, env, e);
+    Raven.captureException(e);
     return;
   }
   let newActions = null;
@@ -205,7 +202,7 @@ export function* getTasksSideEffect(action) {
     }
   } catch (e) {
     yield call(rollbackTransaction, connection);
-    yield call(reportErrorToSNS, env, e);
+    Raven.captureException(e);
   }
   if (newActions) {
     let i = 0;
@@ -251,9 +248,9 @@ export function* getRepoSideEffect(action) {
     const has_wiki = repo && repo.data ? repo.data.has_wiki ? 1 : 0 : null;
     const has_pages = repo && repo.data ? repo.data.has_pages ? 1 : 0 : null;
     const has_downloads = repo && repo.data ? repo.data.has_downloads ? 1 : 0 : null;
-    const pushed_at = repo && repo.data ? repo.data.pushed_at : null;
-    const created_at = repo && repo.data ? repo.data.created_at : null;
-    const updated_at = repo && repo.data ? repo.data.updated_at : null;
+    const pushed_at = repo && repo.data && repo.data.pushed_at ? new Date(repo.data.pushed_at).getTime() : null;
+    const created_at = repo && repo.data && repo.data.created_at ? new Date(repo.data.created_at).getTime() : null;
+    const updated_at = repo && repo.data && repo.data.updated_at ? new Date(repo.data.updated_at).getTime() : null;
     yield call(sqlPromise, connection, INSERT_REPO_STMT, [
       id, owner_login, owner_id, name, full_name, language, forks_count, stargazers_count, watchers_count, subscribers_count, size, has_issues, has_wiki, has_pages, has_downloads, pushed_at, created_at, updated_at,
       owner_login, owner_id, name, full_name, language, forks_count, stargazers_count, watchers_count, subscribers_count, size, has_issues, has_wiki, has_pages, has_downloads, pushed_at, created_at, updated_at
@@ -266,8 +263,8 @@ export function* getRepoSideEffect(action) {
         _computationRepo: payload._computationRepo
       }
     });
-  } catch (error) {
-    yield call(reportErrorToSNS, env, error);
+  } catch (e) {
+    Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
   }
@@ -315,8 +312,8 @@ export function* getReposSideEffect(action) {
         }); // get next batch of repos
       }
     }
-  } catch (error) {
-    yield call(reportErrorToSNS, env, error);
+  } catch (e) {
+    Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
   }
@@ -348,8 +345,8 @@ export function* getLastSideEffect(action) {
         _computationRepo: payload._computationRepo
       }
     }); // get commits
-  } catch (error) {
-    yield call(reportErrorToSNS, env, error);
+  } catch (e) {
+    Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
   }
@@ -398,8 +395,8 @@ export function* getCommitsSideEffect(action) {
         }); // get commits again
       }
     }
-  } catch (error) {
-    yield call(reportErrorToSNS, env, error);
+  } catch (e) {
+    Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
   }
@@ -426,10 +423,10 @@ export function* getCommitSideEffect(action) {
     const repo_id = parseInt(payload._computationId);
     const author_name = commit && commit.data && commit.data.commit && commit.data.commit.author ? commit.data.commit.author.name : null;
     const author_email = commit && commit.data && commit.data.commit && commit.data.commit.author ? commit.data.commit.author.email : null;
-    const author_date = commit && commit.data && commit.data.commit && commit.data.commit.author ? commit.data.commit.author.date : null;
+    const author_date = commit && commit.data && commit.data.commit && commit.data.commit.author ? new Date(commit.data.commit.author.date).getTime() : null;
     const committer_name = commit && commit.data && commit.data.commit && commit.data.commit.committer ? commit.data.commit.committer.name : null;
     const committer_email = commit && commit.data && commit.data.commit && commit.data.commit.committer ? commit.data.commit.committer.email : null;
-    const committer_date = commit && commit.data && commit.data.commit && commit.data.commit.committer ? commit.data.commit.committer.date : null;
+    const committer_date = commit && commit.data && commit.data.commit && commit.data.commit.committer ? new Date(commit.data.commit.committer.date).getTime() : null;
     const author_login = commit && commit.data && commit.data.author ? commit.data.author.login : null;
     const author_id = commit && commit.data && commit.data.author ? parseInt(commit.data.author.id) : null;
     const committer_login = commit && commit.data && commit.data.committer ? commit.data.committer.login : null;
@@ -444,8 +441,8 @@ export function* getCommitSideEffect(action) {
       sha, repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes,
       repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes
     ]); // update commit
-  } catch (error) {
-    yield call(reportErrorToSNS, env, error);
+  } catch (e) {
+    Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
   }

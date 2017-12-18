@@ -64,6 +64,7 @@ import {
 
 const CONNECTION = 'connection';
 const ENV = {
+  RAVEN_URL: "http://my.raven.url",
   ERROR_TOPIC_ARN: 'arn:shit-hit-the-fan',
   SHOULD_STOP_FUNCTION: 'StopIt',
   PACKAGE_URL: 'http://foo.bar.com/package.zip',
@@ -108,7 +109,7 @@ test('get repo side effect', () => {
   expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repos/Meeshkan/redux-ize'));
   expect(gen.next({
     data: MOCK_GET_REPO_DATA
-  }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_REPO_STMT, [110536681, "Meeshkan", 32298527, "redux-ize", "Meeshkan/redux-ize", "JavaScript", 0, 4, 4, 1, 53, 1, 1, 0, 1, "2017-11-29T15:18:57Z", "2017-11-13T10:55:26Z", "2017-12-12T13:38:56Z", "Meeshkan", 32298527, "redux-ize", "Meeshkan/redux-ize", "JavaScript", 0, 4, 4, 1, 53, 1, 1, 0, 1, "2017-11-29T15:18:57Z", "2017-11-13T10:55:26Z", "2017-12-12T13:38:56Z"]));
+  }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_REPO_STMT, [110536681, "Meeshkan", 32298527, "redux-ize", "Meeshkan/redux-ize", "JavaScript", 0, 4, 4, 1, 53, 1, 1, 0, 1, new Date("2017-11-29T15:18:57Z").getTime(), new Date("2017-11-13T10:55:26Z").getTime(), new Date("2017-12-12T13:38:56Z").getTime(), "Meeshkan", 32298527, "redux-ize", "Meeshkan/redux-ize", "JavaScript", 0, 4, 4, 1, 53, 1, 1, 0, 1, new Date("2017-11-29T15:18:57Z").getTime(), new Date("2017-11-13T10:55:26Z").getTime(), new Date("2017-12-12T13:38:56Z").getTime()]));
   expect(gen.next().value).toEqual(put({
     type: GET_LAST,
     payload: {
@@ -138,7 +139,7 @@ test('get commit side effect', () => {
   expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repos/Meeshkan/redux-ize/commits/84d1bbf0643eacaf94685155cd53ae170b561e1b'));
   expect(gen.next({
     data: MOCK_GET_COMMIT_DATA
-  }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_COMMIT_STMT, ["84d1bbf0643eacaf94685155cd53ae170b561e1b", 110536681, "Mike Solomon", "mike@mikesolomon.org", "2017-11-13T11:51:59Z", "Mike Solomon", "mike@mikesolomon.org", "2017-11-13T11:51:59Z", "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24, 110536681, "Mike Solomon", "mike@mikesolomon.org", "2017-11-13T11:51:59Z", "Mike Solomon", "mike@mikesolomon.org", "2017-11-13T11:51:59Z", "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24]));
+  }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_COMMIT_STMT, ["84d1bbf0643eacaf94685155cd53ae170b561e1b", 110536681, "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24, 110536681, "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24]));
   expect(gen.next().value).toEqual(call(endSagaPart));
   expect(gen.next().done).toBe(true);
 });
@@ -1015,6 +1016,7 @@ test('end saga when there is no remaining capacity, other units are not executin
   expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(destroy, CONNECTION));
   const USER_DATA = `#!/bin/bash
+export RAVEN_URL="http://my.raven.url" && \
 export MY_SQL_HOST="my.sql.cluster" && \
 export MY_SQL_PORT="3306" && \
 export MY_SQL_USERNAME="meeshkan" && \

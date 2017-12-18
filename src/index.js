@@ -15,8 +15,10 @@ import {
 import {
   sqlPromise
 } from './util';
+import Raven from 'raven';
 
 export default async () => {
+  Raven.config(process.env.RAVEN_URL).install();
   const connection = mysql.createConnection({
     host: process.env.MY_SQL_HOST,
     port: process.env.MY_SQL_PORT,
@@ -31,7 +33,7 @@ export default async () => {
   try {
     await new Promise((resolve, reject) => connection.connect(e => e ? reject(e) : resolve()));
   } catch (e) {
-    await reportErrorToSNS(process.env, e);
+    Raven.captureException(e);
     connection.destroy();
     return;
   }
@@ -45,8 +47,8 @@ export default async () => {
     if (JSON.parse(shouldStop)) {
       return;
     }
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS commits (sha VARCHAR(40) PRIMARY KEY, repo_id INT, author_name VARCHAR(128), author_email VARCHAR(128), author_date VARCHAR(64), committer_name VARCHAR(128), committer_email VARCHAR(128), committer_date VARCHAR(64), author_login VARCHAR(128), author_id INT, committer_login VARCHAR(128), committer_id INT, additions INT, deletions INT, total INT, test_additions INT, test_deletions INT, test_changes INT);'); // create commit table
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS repos (id INT PRIMARY KEY, owner_login VARCHAR(128), owner_id INT, name VARCHAR(128), full_name VARCHAR(128), language VARCHAR(128), forks_count INT, stargazers_count INT, watchers_count INT, subscribers_count INT, size INT, has_issues INT, has_wiki INT, has_pages INT, has_downloads INT, pushed_at VARCHAR(64), created_at VARCHAR(64), updated_at VARCHAR(64));'); // create repo table
+    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS commits (sha VARCHAR(40) PRIMARY KEY, repo_id INT, author_name VARCHAR(128), author_email VARCHAR(128), author_date BIGINT, committer_name VARCHAR(128), committer_email VARCHAR(128), committer_date BIGINT, author_login VARCHAR(128), author_id INT, committer_login VARCHAR(128), committer_id INT, additions INT, deletions INT, total INT, test_additions INT, test_deletions INT, test_changes INT);'); // create commit table
+    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS repos (id INT PRIMARY KEY, owner_login VARCHAR(128), owner_id INT, name VARCHAR(128), full_name VARCHAR(128), language VARCHAR(128), forks_count INT, stargazers_count INT, watchers_count INT, subscribers_count INT, size INT, has_issues INT, has_wiki INT, has_pages INT, has_downloads INT, pushed_at BIGINT, created_at BIGINT, updated_at BIGINT);'); // create repo table
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS deferred (id VARCHAR(36), json TEXT);'); // create deferred table
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS unfulfilled (id VARCHAR(36), unfulfilled INT);'); // redundant version of deferred that is used to estimate the number of servers to provision
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36), executing INT);'); // a global state machine for the number of executing servers
@@ -63,6 +65,6 @@ export default async () => {
       store.dispatch(getTasks(parseInt(process.env.GITHUB_API_LIMIT)));
     }
   } catch (e) {
-    await reportErrorToSNS(process.env, e);
+    Raven.captureException(e);
   }
 }
