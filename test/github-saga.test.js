@@ -65,7 +65,6 @@ import {
 const CONNECTION = 'connection';
 const ENV = {
   RAVEN_URL: "http://my.raven.url",
-  ERROR_TOPIC_ARN: 'arn:shit-hit-the-fan',
   SHOULD_STOP_FUNCTION: 'StopIt',
   PACKAGE_URL: 'http://foo.bar.com/package.zip',
   PACKAGE_NAME: 'package.zip',
@@ -1026,7 +1025,6 @@ export MY_SQL_SSL="some ssl scheme" && \
 export GITHUB_API="https://api.github.com" && \
 export MAX_REPOS="60001" && \
 export MAX_COMMITS="59" && \
-export ERROR_TOPIC_ARN="arn:shit-hit-the-fan" && \
 export SHOULD_STOP_FUNCTION="StopIt" && \
 export MAX_COMPUTATIONS="949" && \
 export PACKAGE_URL="http://foo.bar.com/package.zip" && \

@@ -124,7 +124,6 @@ export MY_SQL_SSL="${env.MY_SQL_SSL}" && \
 export GITHUB_API="${env.GITHUB_API}" && \
 export MAX_REPOS="${env.MAX_REPOS}" && \
 export MAX_COMMITS="${env.MAX_COMMITS}" && \
-export ERROR_TOPIC_ARN="${env.ERROR_TOPIC_ARN}" && \
 export SHOULD_STOP_FUNCTION="${env.SHOULD_STOP_FUNCTION}" && \
 export MAX_COMPUTATIONS="${env.MAX_COMPUTATIONS}" && \
 export PACKAGE_URL="${env.PACKAGE_URL}" && \
