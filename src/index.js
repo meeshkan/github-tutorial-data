@@ -41,7 +41,7 @@ export default async () => {
     return;
   }
   try {
-    const limit = axios(`${process.env.GITHUB_API}/rate_limit`);
+    const limit = await axios(`${process.env.GITHUB_API}/rate_limit`);
     const shouldStop = await new Promise((resolve, reject) => new AWS.Lambda({region: 'us-east-1'}).invoke({
       InvocationType: 'RequestResponse',
       FunctionName: process.env.SHOULD_STOP_FUNCTION,

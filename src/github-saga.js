@@ -308,7 +308,7 @@ export function* getReposSideEffect(action) {
           }
         }); // repo data
       }
-      const next = /<(.|\n)*?>/g.exec(repos.headers['Link'].split(',').filter(x => x.indexOf('rel="next"') !== -1)[0])[0].replace('<', '').replace('>', '');
+      const next = /<(.|\n)*?>/g.exec(repos.headers['link'].split(',').filter(x => x.indexOf('rel="next"') !== -1)[0])[0].replace('<', '').replace('>', '');
       const since = parseInt(urlparse(next).query.substring(1).split('&').filter(x => x.indexOf('since=') !== -1)[0].split('=')[1]);
       const updatedCount = parseInt(payload._computationReposCount || 0) + useableRepos.length;
       if (updatedCount < parseInt(env.MAX_REPOS)) {
@@ -343,7 +343,7 @@ export function* getLastSideEffect(action) {
       throw new Error("cannot advance anymore");
     }
     const commit = yield call(axios, `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`);
-    const last = /<(.|\n)*?>/g.exec(commit.headers['Link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
+    const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
     const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
     yield put({
       type: GET_COMMITS,

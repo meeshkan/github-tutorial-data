@@ -162,7 +162,7 @@ test('get last side effect', () => {
   expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repos/redux-saga/redux-saga/commits'));
   expect(gen.next({
     headers: {
-      Link: '<https://api.github.com/repositories/47071941/commits?page=2>; rel="next", <https://api.github.com/repositories/47071941/commits?page=47>; rel="last"'
+      link: '<https://api.github.com/repositories/47071941/commits?page=2>; rel="next", <https://api.github.com/repositories/47071941/commits?page=47>; rel="last"'
     }
   }).value).toEqual(put({
     type: GET_COMMITS,
@@ -192,7 +192,7 @@ test('get repos side effect', () => {
   expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repositories?since=308249'));
   expect(gen.next({
     headers: {
-      Link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
+      link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
     },
     data: MOCK_GET_REPOS_DATA
   }).value).toEqual(put({
@@ -657,7 +657,7 @@ test('get commits side effect', () => {
   expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repositories/36535156/commits?page=33'));
   expect(gen.next({
     headers: {
-      Link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
+      link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
     },
     data: MOCK_GET_COMMITS_DATA
   }).value).toEqual(put({
