@@ -20,7 +20,8 @@ import githubSaga, {
   endScriptSideEffect,
   stateSelector,
   createFunction,
-  exitProcess
+  exitProcess,
+  getFunctionsToLaunch
 } from '../src/github-saga';
 
 import {
@@ -71,6 +72,7 @@ import {
 
 const CONNECTION = 'connection';
 const ENV = {
+  SCRIPT_EPOCH: 0,
   GITHUB_TUTORIAL_UNIQUE_ID: 'my-unique-id',
   RAVEN_URL: "http://my.raven.url",
   SHOULD_STOP_FUNCTION: 'StopIt',
@@ -92,6 +94,7 @@ const ENV = {
   GITHUB_TUTORIAL_SUBNET_ID: 'pfjegngwe',
   GITHUB_TUTORIAL_SECURITY_GROUP_ID: 'lajfefwfk',
   GITHUB_TUTORIAL_IAM_INSTANCE_ARN: 'arn:foo-bar',
+  GITHUB_TUTORIAL_KEY_NAME: 'my-key-name',
   MY_SQL_DATABASE: 'github',
   MY_SQL_SSL: 'some ssl scheme',
   INVOCATION_TYPE: 'Event'
@@ -147,6 +150,26 @@ test('get commit side effect', () => {
     data: MOCK_GET_COMMIT_DATA
   }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_COMMIT_STMT, ["84d1bbf0643eacaf94685155cd53ae170b561e1b", 110536681, "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24, 110536681, "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24]));
   expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().done).toBe(true);
+});
+
+test('get last side effect for empty repo', () => {
+  const payload = {
+    _computationId: 110536681,
+    _computationOwner: 'mikesol',
+    _computationRepo: 'empty-repo'
+  };
+  const action = {
+    type: GET_LAST,
+    payload
+  };
+  const gen = getLastSideEffect(action);
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repos/mikesol/empty-repo/commits'));
+  expect(gen.next({
+    headers: {
+    }
+  }).value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
 
@@ -1000,64 +1023,51 @@ test('end script when we do not have enough tasks to spawn something new', () =>
   const gen = endScriptSideEffect();
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
-    ...state,
-    remaining: -5
+    ...state
   }).value).toEqual(call(beginTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, []));
   expect(gen.next([{
     unfulfilled: 30
   }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
   expect(gen.next([{
     executing: 17
   }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
-  // unfulfilled should be previous plus remaining as we are not over 60
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', 35, 35]));
   expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
+  expect(gen.next().value).toEqual(call(getFunctionsToLaunch, 30, 17, 949));
+  expect(gen.next(0).value).toEqual(call(destroy, CONNECTION));
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 
-test('end script when we have an insanely high remaining balance but no new tasks elsewhere', () => {
-  const gen = endScriptSideEffect();
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    ...state,
-    remaining: 10000
-  }).value).toEqual(call(beginTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
-  expect(gen.next([{
-    unfulfilled: 30
-  }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
-  expect(gen.next([{
-    executing: 17
-  }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
-  // unfulfilled should be previous plus remaining as we are not over 60
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', 30, 30]));
-  expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
-  expect(gen.next().value).toEqual(call(exitProcess));
+test('get fucntions to launch', () => {
+  expect(getFunctionsToLaunch(1,0,1)).toBe(2);
+  expect(getFunctionsToLaunch(0,1,1)).toBe(0);
+  expect(getFunctionsToLaunch(5,1,1)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(33,88,900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(33,88,900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(43,81,900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(403,882,900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(33,88,1)).toBeGreaterThanOrEqual(0);
+  expect(getFunctionsToLaunch(403,882,10)).toBe(0);
 });
 
 test('end script when we have enough tasks to spawn something new', () => {
   const gen = endScriptSideEffect();
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
-    ...state,
-    remaining: -8
+    ...state
   }).value).toEqual(call(beginTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, []));
   expect(gen.next([{
     unfulfilled: 143
   }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
   expect(gen.next([{
     executing: 17
   }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
-  // we should spawn two tasks and have 143 old + 8 new - 120 for the two new tasks
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', 31, 31]));
   expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
+  expect(gen.next().value).toEqual(call(getFunctionsToLaunch, 143, 17, 949));
   const USER_DATA = id => `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${id}" && \
+export SCRIPT_EPOCH="1" && \
 export RAVEN_URL="http://my.raven.url" && \
 export MY_SQL_HOST="my.sql.cluster" && \
 export MY_SQL_PORT="3306" && \
@@ -1080,12 +1090,15 @@ export GITHUB_TUTORIAL_SUBNET_ID="pfjegngwe" && \
 export GITHUB_TUTORIAL_SECURITY_GROUP_ID="lajfefwfk" && \
 export GITHUB_TUTORIAL_IAM_INSTANCE_ARN="arn:foo-bar" && \
 export GITHUB_TUTORIAL_IMAGE_ID="ami-3511515" && \
+export GITHUB_TUTORIAL_KEY_NAME="my-key-name" && \
+sudo apt-get -y update && \
+sudo apt-get -y dist-upgrade && \
 mkdir $PACKAGE_FOLDER && \
 cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
-sudo shutdown -h now
+
 `;
   const params = id => ({
     InstanceCount: 1,
@@ -1094,6 +1107,7 @@ sudo shutdown -h now
     LaunchSpecification: {
       InstanceType: 't2.micro',
       SubnetId: 'pfjegngwe',
+      KeyName: 'my-key-name',
       SecurityGroupIds: [
         'lajfefwfk'
       ],
@@ -1109,12 +1123,13 @@ sudo shutdown -h now
     SpotPrice: "0.0043",
     Type: "one-time"
   });
-  expect(gen.next().value).toEqual(call(uuidv4));
+  expect(gen.next(2).value).toEqual(call(uuidv4));
   expect(gen.next('another-unique-id').value).toEqual(call(createFunction, params('another-unique-id')));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['another-unique-id']));
   expect(gen.next().value).toEqual(call(uuidv4));
   expect(gen.next('yet-another-unique-id').value).toEqual(call(createFunction, params('yet-another-unique-id')));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['yet-another-unique-id']));
+  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 

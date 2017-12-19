@@ -3,8 +3,7 @@ export const INSERT_COMMIT_STMT = 'INSERT INTO commits (sha, repo_id, author_nam
 export const INSERT_DEFERRED_STMT = 'INSERT INTO deferred (id, action, json) VALUES (?, ?, ?);';
 export const SELECT_DEFERRED_STMT = 'SELECT id, json FROM deferred ORDER BY CASE WHEN action = ? THEN 1 WHEN action = ? THEN 2 WHEN action = ? THEN 3 WHEN action = ? THEN 4 WHEN action = ? THEN 5 ELSE 1000 END, action ASC LIMIT ?;';
 export const DELETE_DEFERRED_STMT = tasks => `DELETE FROM deferred WHERE ${tasks.map(x => 'id = ?').join(' OR ')};`;
-export const SELECT_UNFULFILLED_STMT = 'SELECT unfulfilled FROM unfulfilled WHERE id = ?;';
+export const SELECT_UNFULFILLED_STMT = 'SELECT COUNT(*) AS unfulfilled FROM deferred;';
 export const INCREASE_EXECUTING_STATEMENT = 'INSERT INTO executing (id) VALUES (?);';
 export const SELECT_EXECUTING_STATEMENT = 'SELECT COUNT(*) AS executing FROM executing;';
 export const DECREASE_EXECUTING_STATEMENT = 'DELETE FROM executing WHERE id = ?;';
-export const CHANGE_UNFULFILLED_STATEMENT = 'INSERT INTO unfulfilled (id, unfulfilled) VALUES (?,?) ON DUPLICATE KEY UPDATE unfulfilled = ?;';

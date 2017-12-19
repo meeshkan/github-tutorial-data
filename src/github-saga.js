@@ -35,8 +35,7 @@ import {
   SELECT_UNFULFILLED_STMT,
   INCREASE_EXECUTING_STATEMENT,
   SELECT_EXECUTING_STATEMENT,
-  DECREASE_EXECUTING_STATEMENT,
-  CHANGE_UNFULFILLED_STATEMENT,
+  DECREASE_EXECUTING_STATEMENT
 } from './sql';
 
 import {
@@ -77,7 +76,7 @@ export function* deferActionSideEffect(action) {
     } = action;
     const uuid = yield call(uuidv4);
     yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, payload.type, JSON.stringify(payload)]);
-  } catch(e) {
+  } catch (e) {
     console.error(e);
     Raven.captureException(e);
   } finally {
@@ -85,37 +84,48 @@ export function* deferActionSideEffect(action) {
   }
 }
 
+export const getFunctionsToLaunch = (unfulfilled, executing, maxComputations) => {
+  if (executing === 0 && unfulfilled > 0) {
+    // will only ever be first case
+    return 2;
+  }
+  if (unfulfilled === 0) {
+    return 0;
+  }
+  if (executing < (maxComputations / 2)) {
+    return 1 + (Math.random() > 2 * executing / maxComputations ? 1 : 0);
+  } else {
+    return Math.random() > (executing / maxComputations - 0.5) * 2 ? 1 : 0;
+  }
+}
+
 export function* endScriptSideEffect() {
+  const {
+    connection,
+    env
+  } = yield select(stateSelector);
   try {
-    const {
-      connection,
-      env,
-      remaining
-    } = yield select(stateSelector);
     // the bloc below is laborious but necessary to keep the number of servers down
-    // otherwise, we could get into the situation where we spawn a server for just a few jobs
-    // because each server has a four-minute start up time, if we are only using it for a few jobs, it becomes very costly
-    // so, we only spawn a server when we are sure to have (mod) 60 jobs and add the rest to an unfulfilled table
-    // for the corner case where we only have one server executing and jobs to do, we make sure to spawn at least one server
-    const taskDebt = Math.max(remaining * -1, 0);
+    // otherwise, we could get into the situation where we spawn too many servers
+    // basically, if we have unfulfilled jobs, then we taper off the number of launched servers once we get to half max capacity
+    // this will result in a bit of waste in the end but it is easier than other types of bookkeeping
     yield call(beginTransaction, connection);
-    const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, ['unfulfilled']); // get how many unfulfilled functions there are
+    // unfulfilled
+    const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, []); // get how many unfulfilled functions there are
     const unfulfilled = _unfulfilled.length > 0 ? parseInt(_unfulfilled[0].unfulfilled || 0) : 0;
-    const totalUnfulfilled = unfulfilled + taskDebt; // the total unfulfilled is what is remaining from other machines plus this machine
-    const executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
-    const totalExecuting = parseInt(executing[0].executing);
-    const functionsToLaunch = Math.min((totalExecuting === 1 ? Math.ceil : Math.floor)(totalUnfulfilled / parseInt(env.GITHUB_API_LIMIT || 60)), parseInt(env.MAX_COMPUTATIONS || 950) - totalExecuting); // we launch enough machines to cover unfulfilled jobs while not going over our max
+    const _executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
+    const executing = parseInt(_executing[0].executing);
     yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, [env.GITHUB_TUTORIAL_UNIQUE_ID]); // we decrease the number of executing jobs
-    const newUnfulfilled = Math.max(taskDebt + unfulfilled - (functionsToLaunch * parseInt(env.GITHUB_API_LIMIT)), 0); // the new amount of unfulfilled jobs after the launch
-    yield call(sqlPromise, connection, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', newUnfulfilled, newUnfulfilled]);
     yield call(commitTransaction, connection);
+    const maxComputations = parseInt(env.MAX_COMPUTATIONS || 0);
+    const functionsToLaunch = yield call(getFunctionsToLaunch, unfulfilled, executing, maxComputations);
     // we don't need the connection anymore, so we release it to the pool
-    yield call(destroy, connection);
     let i = 0;
     for (; i < functionsToLaunch; i++) {
       const uniqueId = yield call(uuidv4);
       const USER_DATA = `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
+export SCRIPT_EPOCH="${parseInt(env.SCRIPT_EPOCH || 0) + 1}" && \
 export RAVEN_URL="${env.RAVEN_URL}" && \
 export MY_SQL_HOST="${env.MY_SQL_HOST}" && \
 export MY_SQL_PORT="${env.MY_SQL_PORT}" && \
@@ -138,12 +148,15 @@ export GITHUB_TUTORIAL_SUBNET_ID="${env.GITHUB_TUTORIAL_SUBNET_ID}" && \
 export GITHUB_TUTORIAL_SECURITY_GROUP_ID="${env.GITHUB_TUTORIAL_SECURITY_GROUP_ID}" && \
 export GITHUB_TUTORIAL_IAM_INSTANCE_ARN="${env.GITHUB_TUTORIAL_IAM_INSTANCE_ARN}" && \
 export GITHUB_TUTORIAL_IMAGE_ID="${env.GITHUB_TUTORIAL_IMAGE_ID}" && \
+export GITHUB_TUTORIAL_KEY_NAME="${env.GITHUB_TUTORIAL_KEY_NAME}" && \
+sudo apt-get -y update && \
+sudo apt-get -y dist-upgrade && \
 mkdir $PACKAGE_FOLDER && \
 cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
-sudo shutdown -h now
+${parseInt(env.SCRIPT_EPOCH || 0) > 2 ? 'sudo shutdown -h now' : ''}
 `;
       const createFunctionParams = {
         InstanceCount: 1,
@@ -152,6 +165,7 @@ sudo shutdown -h now
         LaunchSpecification: {
           InstanceType: 't2.micro',
           SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
+          KeyName: env.GITHUB_TUTORIAL_KEY_NAME,
           SecurityGroupIds: [
             env.GITHUB_TUTORIAL_SECURITY_GROUP_ID
           ],
@@ -168,17 +182,21 @@ sudo shutdown -h now
         Type: "one-time"
       };
       console.log(`will spawn new server ${uniqueId}`);
-      yield call(createFunction, createFunctionParams);
-      console.log("*** new server spawned");
+      try {
+        yield call(createFunction, createFunctionParams);
+      } catch (e) {
+        if (e.code !== 'DryRunOperation') {
+          throw e;
+        }
+      }
       yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
-      console.log(`*** new server registered ${uniqueId}`);
     }
   } catch (e) {
     console.error(e);
     Raven.captureException(e);
     yield call(rollbackTransaction, connection);
-    yield call(destroy, connection);
   } finally {
+    yield call(destroy, connection);
     // a forced exit would be necessary if, for example, the connection does not close
     yield call(exitProcess);
   }
@@ -355,22 +373,22 @@ export function* getLastSideEffect(action) {
     const {
       payload
     } = action;
-    const commit = yield call(axios, `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`);
-    if (Object.keys(commit.headers).indexOf('link') === -1) {
-      throw new Error(`header does not contain link: here are the headers ${Object.keys(commit.headers).join(',')}`);
+    const url = `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`;
+    const commit = yield call(axios, url);
+    if (Object.keys(commit.headers).indexOf('link') !== -1) {
+      const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
+      const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
+      yield put({
+        type: GET_COMMITS,
+        payload: {
+          _computationPage: page,
+          _computationCommitCount: 0,
+          _computationId: payload._computationId,
+          _computationOwner: payload._computationOwner,
+          _computationRepo: payload._computationRepo
+        }
+      }); // get commits
     }
-    const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
-    const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
-    yield put({
-      type: GET_COMMITS,
-      payload: {
-        _computationPage: page,
-        _computationCommitCount: 0,
-        _computationId: payload._computationId,
-        _computationOwner: payload._computationOwner,
-        _computationRepo: payload._computationRepo
-      }
-    }); // get commits
   } catch (e) {
     console.error(e);
     Raven.captureException(e);
@@ -448,15 +466,15 @@ export function* getCommitSideEffect(action) {
     const committer_email = commit && commit.data && commit.data.commit && commit.data.commit.committer ? commit.data.commit.committer.email : null;
     const committer_date = commit && commit.data && commit.data.commit && commit.data.commit.committer ? new Date(commit.data.commit.committer.date).getTime() : null;
     const author_login = commit && commit.data && commit.data.author ? commit.data.author.login : null;
-    const author_id = commit && commit.data && commit.data.author ? parseInt(commit.data.author.id) : null;
+    const author_id = commit && commit.data && commit.data.author ? parseInt(commit.data.author.id || 0) : null;
     const committer_login = commit && commit.data && commit.data.committer ? commit.data.committer.login : null;
-    const committer_id = commit && commit.data && commit.data.committer ? parseInt(commit.data.committer.id) : null;
-    const additions = commit && commit.data && commit.data.stats ? parseInt(commit.data.stats.additions) : null;
-    const deletions = commit && commit.data && commit.data.stats ? parseInt(commit.data.stats.deletions) : null;
-    const total = commit && commit.data && commit.data.stats ? parseInt(commit.data.stats.total) : null;
-    const test_additions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.additions)).reduce((a, b) => a + b, 0) : null;
-    const test_deletions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.deletions)).reduce((a, b) => a + b, 0) : null;
-    const test_changes = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.changes)).reduce((a, b) => a + b, 0) : null;
+    const committer_id = commit && commit.data && commit.data.committer ? parseInt(commit.data.committer.id || 0) : null;
+    const additions = commit && commit.data && commit.data.stats ? parseInt(commit.data.stats.additions || 0) : null;
+    const deletions = commit && commit.data && commit.data.stats ? parseInt(commit.data.stats.deletions || 0) : null;
+    const total = commit && commit.data && commit.data.stats ? parseInt(commit.data.stats.total || 0) : null;
+    const test_additions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.additions || 0)).reduce((a, b) => a + b, 0) : null;
+    const test_deletions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.deletions || 0)).reduce((a, b) => a + b, 0) : null;
+    const test_changes = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.changes || 0)).reduce((a, b) => a + b, 0) : null;
     console.log(`inserting commit ${sha}`);
     yield call(sqlPromise, connection, INSERT_COMMIT_STMT, [
       sha, repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes,
