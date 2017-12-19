@@ -4,7 +4,8 @@ import {
   putRemaining,
   decreaseRemaining,
   increaseExecutionCount,
-  decreaseExecutionCount
+  decreaseExecutionCount,
+  endScript
 } from '../src/actions';
 
 import reducer from '../src/reducers';
@@ -14,7 +15,8 @@ test('env and connection reducer', () => {
     env: 'env',
     connection: 'connection',
     executing: 0,
-    remaining: 0
+    remaining: 0,
+    scriptEnded: false
   });
 });
 
@@ -23,7 +25,8 @@ test('remaining reducer', () => {
     env: null,
     connection: null,
     executing: 0,
-    remaining: 59
+    remaining: 59,
+    scriptEnded: false
   });
 });
 
@@ -32,6 +35,17 @@ test('execution reducer', () => {
     env: null,
     connection: null,
     executing: 1,
-    remaining: 0
+    remaining: 0,
+    scriptEnded: false
+  });
+});
+
+test('script ended', () => {
+  expect(reducer({}, endScript())).toEqual({
+    env: null,
+    connection: null,
+    executing: 0,
+    remaining: 0,
+    scriptEnded: true
   });
 });

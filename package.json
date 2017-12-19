@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm install && babel src --out-dir dist --copy-files",
     "test": "jest --coverage",
-    "package": "npm run build && node-lambda package -A build -x \"src/* coverage/* test/* package-lock.json\""
+    "package": "npm run build && npm test && node-lambda package -A build -x \"src/* coverage/* test/* package-lock.json\""
   },
   "author": "Mike Solomon",
   "license": "ISC",

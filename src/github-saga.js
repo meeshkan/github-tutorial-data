@@ -5,10 +5,15 @@ import {
   GET_COMMIT,
   GET_COMMITS,
   GET_TASKS,
+  DO_CLEANUP,
+  END_SCRIPT,
+  DEFER_ACTION,
   getTasks,
   decreaseRemaining,
   increaseExecutionCount,
-  decreaseExecutionCount
+  decreaseExecutionCount,
+  doCleanup,
+  endScript,
 } from './actions';
 
 import Raven from 'raven';
@@ -60,64 +65,56 @@ export const createFunction = params => new Promise((resolve, reject) => new AWS
 }).requestSpotInstances(params, (e, r) => e ? reject(e) : resolve(r)));
 export const easyMD5 = data => crypto.createHash('md5').update(data).digest("hex").substring(0, 8);
 
-// decrease remaining
-// boot up new server if we have outstanding tasks
-export function* beginSagaPart(action) {
-  yield put(increaseExecutionCount());
-  const {
-    connection,
-    env,
-    remaining
-  } = yield select(stateSelector);
-  yield put(decreaseRemaining());
-  if (remaining <= 0) {
-    // defer
-    const uuid = yield call(uuidv4);
-    yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, action.type, JSON.stringify(action)]);
-    return false;
-  }
-  return true;
-}
-
 export const exitProcess = () => process.exit(0);
 
-export function* endSagaPart() {
-  yield put(decreaseExecutionCount());
-  const {
-    connection,
-    env,
-    remaining,
-    executing
-  } = yield select(stateSelector);
-  if (remaining > 0) {
-    // we get some more tasks
-    // in the worst case, we can get and re-defer them
-    yield put(getTasks(remaining));
-  } else if (executing <= 0) {
-    // this is cleanup work for the job
-    try {
-      // the bloc below is laborious but necessary to keep the number of servers down
-      // otherwise, we could get into the situation where we spawn a server for just a few jobs
-      // because each server has a four-minute start up time, if we are only using it for a few jobs, it becomes very costly
-      // so, we only spawn a server when we are sure to have (mod) 60 jobs and add the rest to an unfulfilled table
-      // for the corner case where we only have one server executing and jobs to do, we make sure to spawn at least one server
-      yield call(beginTransaction, connection);
-      const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, ['unfulfilled']); // get how many unfulfilled functions there are
-      const unfulfilled = _unfulfilled.length > 0 ? parseInt(_unfulfilled[0].unfulfilled || 0) : 0;
-      const totalUnfulfilled = unfulfilled + (remaining * -1); // the total unfulfilled is what is remaining from other machines plus this machine
-      const executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
-      const totalExecuting = parseInt(executing[0].executing);
-      const functionsToLaunch = Math.min((totalExecuting === 1 ? Math.ceil : Math.floor)(totalUnfulfilled / parseInt(env.GITHUB_API_LIMIT || 60)), parseInt(env.MAX_COMPUTATIONS || 950) - totalExecuting); // we launch enough machines to cover unfulfilled jobs while not going over our max
-      yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, [env.GITHUB_TUTORIAL_UNIQUE_ID]); // we decrease the number of executing jobs
-      const newUnfulfilled = Math.max((remaining * -1) + unfulfilled - (functionsToLaunch * parseInt(env.GITHUB_API_LIMIT)), 0); // the new amount of unfulfilled jobs after the launch
-      yield call(sqlPromise, connection, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', newUnfulfilled, newUnfulfilled]);
-      yield call(commitTransaction, connection);
-      // we don't need the connection anymore, so we release it to the pool
-      yield call(destroy, connection);
-      let i = 0;
-      for (; i < functionsToLaunch; i++) {
-        const uniqueId = yield call(uuidv4);
-        const USER_DATA = `#!/bin/bash
+export function* deferActionSideEffect(action) {
+  try {
+    const {
+      connection
+    } = yield select(stateSelector);
+    const {
+      payload
+    } = action;
+    const uuid = yield call(uuidv4);
+    yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, payload.type, JSON.stringify(payload)]);
+  } catch(e) {
+    console.error(e);
+    Raven.captureException(e);
+  } finally {
+    yield put(doCleanup());
+  }
+}
+
+export function* endScriptSideEffect() {
+  try {
+    const {
+      connection,
+      env,
+      remaining
+    } = yield select(stateSelector);
+    // the bloc below is laborious but necessary to keep the number of servers down
+    // otherwise, we could get into the situation where we spawn a server for just a few jobs
+    // because each server has a four-minute start up time, if we are only using it for a few jobs, it becomes very costly
+    // so, we only spawn a server when we are sure to have (mod) 60 jobs and add the rest to an unfulfilled table
+    // for the corner case where we only have one server executing and jobs to do, we make sure to spawn at least one server
+    const taskDebt = Math.max(remaining * -1, 0);
+    yield call(beginTransaction, connection);
+    const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, ['unfulfilled']); // get how many unfulfilled functions there are
+    const unfulfilled = _unfulfilled.length > 0 ? parseInt(_unfulfilled[0].unfulfilled || 0) : 0;
+    const totalUnfulfilled = unfulfilled + taskDebt; // the total unfulfilled is what is remaining from other machines plus this machine
+    const executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
+    const totalExecuting = parseInt(executing[0].executing);
+    const functionsToLaunch = Math.min((totalExecuting === 1 ? Math.ceil : Math.floor)(totalUnfulfilled / parseInt(env.GITHUB_API_LIMIT || 60)), parseInt(env.MAX_COMPUTATIONS || 950) - totalExecuting); // we launch enough machines to cover unfulfilled jobs while not going over our max
+    yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, [env.GITHUB_TUTORIAL_UNIQUE_ID]); // we decrease the number of executing jobs
+    const newUnfulfilled = Math.max(taskDebt + unfulfilled - (functionsToLaunch * parseInt(env.GITHUB_API_LIMIT)), 0); // the new amount of unfulfilled jobs after the launch
+    yield call(sqlPromise, connection, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', newUnfulfilled, newUnfulfilled]);
+    yield call(commitTransaction, connection);
+    // we don't need the connection anymore, so we release it to the pool
+    yield call(destroy, connection);
+    let i = 0;
+    for (; i < functionsToLaunch; i++) {
+      const uniqueId = yield call(uuidv4);
+      const USER_DATA = `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
 export RAVEN_URL="${env.RAVEN_URL}" && \
 export MY_SQL_HOST="${env.MY_SQL_HOST}" && \
@@ -148,41 +145,58 @@ unzip $PACKAGE_NAME && \
 node index.js
 shutdown -h now
 `;
-        const createFunctionParams = {
-          InstanceCount: 1,
-          DryRun: JSON.parse(env.GITHUB_TUTORIAL_DRY_RUN || 'false'),
-          InstanceInitiatedShutdownBehavior: 'terminate',
-          LaunchSpecification: {
-            InstanceType: 't2.micro',
-            SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
-            SecurityGroupIds: [
-              env.GITHUB_TUTORIAL_SECURITY_GROUP_ID
-            ],
-            IamInstanceProfile: {
-              Arn: env.GITHUB_TUTORIAL_IAM_INSTANCE_ARN
-            },
-            Monitoring: {
-              Enabled: false
-            },
-            ImageId: env.GITHUB_TUTORIAL_IMAGE_ID,
-            UserData: new Buffer(USER_DATA).toString('base64')
+      const createFunctionParams = {
+        InstanceCount: 1,
+        DryRun: JSON.parse(env.GITHUB_TUTORIAL_DRY_RUN || 'false'),
+        InstanceInitiatedShutdownBehavior: 'terminate',
+        LaunchSpecification: {
+          InstanceType: 't2.micro',
+          SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
+          SecurityGroupIds: [
+            env.GITHUB_TUTORIAL_SECURITY_GROUP_ID
+          ],
+          IamInstanceProfile: {
+            Arn: env.GITHUB_TUTORIAL_IAM_INSTANCE_ARN
           },
-          SpotPrice: "0.0043",
-          Type: "one-time"
-        };
-        yield call(createFunction, createFunctionParams);
-        yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
-      }
-    } catch (e) {
-      yield call(rollbackTransaction, connection);
-      console.error(e);
-      Raven.captureException(e);
-      yield call(destroy, connection);
-    } finally {
-      // a forced exit would be necessary if, for example, the connection does not close
-      yield call(exitProcess);
+          Monitoring: {
+            Enabled: false
+          },
+          ImageId: env.GITHUB_TUTORIAL_IMAGE_ID,
+          UserData: new Buffer(USER_DATA).toString('base64')
+        },
+        SpotPrice: "0.0043",
+        Type: "one-time"
+      };
+      yield call(createFunction, createFunctionParams);
+      yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
     }
+  } catch (e) {
+    yield call(rollbackTransaction, connection);
+    console.error(e);
+    Raven.captureException(e);
+    yield call(destroy, connection);
+  } finally {
+    // a forced exit would be necessary if, for example, the connection does not close
+    yield call(exitProcess);
   }
+}
+
+export function* doCleanupSideEffect() {
+  yield put(decreaseExecutionCount());
+  const {
+    connection,
+    env,
+    remaining,
+    executing
+  } = yield select(stateSelector);
+  if (remaining > 0) {
+    // if we have remaining capacity and we are not done executing, always execute more tasks if possible
+    // otherwise if we are done then we tell the task fetcher to finish things up
+    yield put(getTasks(remaining, executing <= 0));
+  } else if (executing <= 0) {
+    yield put(endScript());
+  }
+  // if we are executing and there is nothing remaining, then we do nothing
 }
 
 export function* getTasksSideEffect(action) {
@@ -191,7 +205,8 @@ export function* getTasksSideEffect(action) {
     env
   } = yield select(stateSelector);
   const {
-    payload
+    payload,
+    meta
   } = action;
   try {
     yield call(beginTransaction, connection);
@@ -218,6 +233,9 @@ export function* getTasksSideEffect(action) {
       yield put(newActions[i]);
     }
   }
+  if ((newActions === null || newActions.length === 0) && meta && meta.endOnNoActions) {
+    yield put(endScript());
+  }
 }
 
 export function* getRepoSideEffect(action) {
@@ -229,10 +247,6 @@ export function* getRepoSideEffect(action) {
     const {
       payload
     } = action;
-    const shouldAdvance = yield call(beginSagaPart, action);
-    if (!shouldAdvance) {
-      throw new Error("cannot advance anymore");
-    }
     const repo = yield call(axios, `${env.GITHUB_API}/repos/${payload._computationOwner}/${payload._computationRepo}`);
     const fork = repo && repo.data ? repo.data.fork : null;
     if (fork) {
@@ -275,7 +289,7 @@ export function* getRepoSideEffect(action) {
     console.error(e);
     Raven.captureException(e);
   } finally {
-    yield call(endSagaPart);
+    yield put(doCleanup());
   }
 }
 
@@ -288,10 +302,6 @@ export function* getReposSideEffect(action) {
     const {
       payload
     } = action;
-    const shouldAdvance = yield call(beginSagaPart, action);
-    if (!shouldAdvance) {
-      throw new Error("cannot advance anymore");
-    }
     const repos = yield call(axios, `${env.GITHUB_API}/repositories?since=${payload._computationSince}`);
     let i = 0;
     if (repos && repos.data) {
@@ -325,7 +335,7 @@ export function* getReposSideEffect(action) {
     console.error(e);
     Raven.captureException(e);
   } finally {
-    yield call(endSagaPart);
+    yield put(doCleanup());
   }
 }
 
@@ -338,10 +348,6 @@ export function* getLastSideEffect(action) {
     const {
       payload
     } = action;
-    const shouldAdvance = yield call(beginSagaPart, action);
-    if (!shouldAdvance) {
-      throw new Error("cannot advance anymore");
-    }
     const commit = yield call(axios, `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`);
     const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
     const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
@@ -359,7 +365,7 @@ export function* getLastSideEffect(action) {
     console.error(e);
     Raven.captureException(e);
   } finally {
-    yield call(endSagaPart);
+    yield put(doCleanup());
   }
 }
 
@@ -372,10 +378,6 @@ export function* getCommitsSideEffect(action) {
     const {
       payload
     } = action;
-    const shouldAdvance = yield call(beginSagaPart, action);
-    if (!shouldAdvance) {
-      throw new Error("cannot advance anymore");
-    }
     const commits = yield call(axios, `https://api.github.com/repositories/${payload._computationId}/commits?page=${payload._computationPage}`);
     if (commits && commits.data && commits.data.length) {
       let i = 0;
@@ -410,7 +412,7 @@ export function* getCommitsSideEffect(action) {
     console.error(e);
     Raven.captureException(e);
   } finally {
-    yield call(endSagaPart);
+    yield put(doCleanup());
   }
 }
 
@@ -423,10 +425,6 @@ export function* getCommitSideEffect(action) {
     const {
       payload
     } = action;
-    const shouldAdvance = yield call(beginSagaPart, action);
-    if (!shouldAdvance) {
-      throw new Error("cannot advance anymore");
-    }
     const commit = yield call(axios, `${env.GITHUB_API}/repos/${payload._computationOwner}/${payload._computationRepo}/commits/${payload._computationSHA}`);
     const sha = commit && commit.data ? commit.data.sha : null;
     if (sha === null) {
@@ -457,7 +455,7 @@ export function* getCommitSideEffect(action) {
     console.error(e);
     Raven.captureException(e);
   } finally {
-    yield call(endSagaPart);
+    yield put(doCleanup());
   }
 }
 
@@ -468,6 +466,9 @@ function* githubSaga() {
   yield takeEvery(GET_REPO, getRepoSideEffect);
   yield takeEvery(GET_REPOS, getReposSideEffect);
   yield takeEvery(GET_TASKS, getTasksSideEffect);
+  yield takeEvery(DEFER_ACTION, deferActionSideEffect);
+  yield takeEvery(DO_CLEANUP, doCleanupSideEffect);
+  yield takeEvery(END_SCRIPT, endScriptSideEffect);
 }
 
 export default githubSaga;

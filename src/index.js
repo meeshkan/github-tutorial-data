@@ -8,6 +8,8 @@ import { applyMiddleware, createStore } from 'redux';
 import createSagaMiddleware from 'redux-saga';
 import githubSaga from './github-saga';
 import reducers from './reducers';
+import deferralMiddleware from './deferral-middleware';
+import endScriptMiddleware from './end-script-middleware';
 import {
   putRemaining,
   putEnv,
@@ -56,7 +58,7 @@ export default async () => {
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS unfulfilled (id VARCHAR(36) PRIMARY KEY, unfulfilled INT);'); // redundant version of deferred that is used to estimate the number of servers to provision
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36) PRIMARY KEY);'); // a global state machine for the number of executing servers
     const sagaMiddleware = createSagaMiddleware();
-    const store = applyMiddleware(sagaMiddleware)(createStore)(reducers);
+    const store = applyMiddleware(endScriptMiddleware, deferralMiddleware, sagaMiddleware)(createStore)(reducers);
     sagaMiddleware.run(githubSaga);
     store.dispatch(putConnection(connection));
     store.dispatch(putEnv(process.env));
@@ -64,7 +66,7 @@ export default async () => {
     if (process.env.IS_INITIAL && JSON.parse(process.env.IS_INITIAL)) {   
       store.dispatch(initialAction(parseInt(process.env.START_REPO)));
     } else {
-      store.dispatch(getTasks(parseInt(process.env.GITHUB_API_LIMIT)));
+      store.dispatch(getTasks(limit.data.remaining, true));
     }
   } catch (e) {
     console.error(e);

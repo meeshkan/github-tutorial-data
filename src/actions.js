@@ -10,6 +10,22 @@ export const PUT_REMAINING = "PUT_REMAINING";
 export const DECREASE_REMAINING = "DECREASE_REMAINING";
 export const INCREASE_EXECUTION_COUNT = "INCREASE_EXECUTION_COUNT";
 export const DECREASE_EXECUTION_COUNT = "DECREASE_EXECUTION_COUNT";
+export const DO_CLEANUP = "DO_CLEANUP";
+export const END_SCRIPT = "END_SCRIPT";
+export const DEFER_ACTION = "DEFER_ACTION";
+
+export const deferAction = payload => ({
+  type: DEFER_ACTION,
+  payload
+});
+
+export const endScript = () => ({
+  type: END_SCRIPT
+});
+
+export const doCleanup = () => ({
+  type: DO_CLEANUP
+});
 
 export const initialAction = since => ({
   type: GET_REPOS,
@@ -35,9 +51,12 @@ export const decreaseRemaining = () => ({
   type: DECREASE_REMAINING
 });
 
-export const getTasks = payload =>({
+export const getTasks = (payload, endOnNoActions) =>({
   type: GET_TASKS,
-  payload
+  payload,
+  meta: {
+    endOnNoActions
+  }
 });
 
 export const putConnection = payload => ({

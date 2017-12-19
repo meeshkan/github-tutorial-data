@@ -5,7 +5,8 @@ import {
   PUT_REMAINING,
   DECREASE_REMAINING,
   INCREASE_EXECUTION_COUNT,
-  DECREASE_EXECUTION_COUNT
+  DECREASE_EXECUTION_COUNT,
+  END_SCRIPT
 } from './actions';
 
 const simpleReducer = type => (state = null, action) => {
@@ -28,6 +29,15 @@ const remaining = (state = 0, action) => {
   }
 }
 
+const scriptEnded = (state = false, action) => {
+  switch (action.type) {
+    case END_SCRIPT:
+      return true;
+    default:
+      return state;
+  }
+}
+
 const executing = (state = 0, action) => {
   switch (action.type) {
     case INCREASE_EXECUTION_COUNT:
@@ -43,5 +53,6 @@ export default combineReducers({
   env: simpleReducer(PUT_ENV),
   connection: simpleReducer(PUT_CONNECTION),
   remaining,
-  executing
+  executing,
+  scriptEnded
 });

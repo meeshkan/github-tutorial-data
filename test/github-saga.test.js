@@ -15,8 +15,9 @@ import githubSaga, {
   getCommitsSideEffect,
   getReposSideEffect,
   getTasksSideEffect,
-  beginSagaPart,
-  endSagaPart,
+  deferActionSideEffect,
+  doCleanupSideEffect,
+  endScriptSideEffect,
   stateSelector,
   createFunction,
   exitProcess
@@ -60,7 +61,12 @@ import {
   INCREASE_EXECUTION_COUNT,
   DECREASE_EXECUTION_COUNT,
   DECREASE_REMAINING,
-  getTasks
+  END_SCRIPT,
+  DO_CLEANUP,
+  DEFER_ACTION,
+  getTasks,
+  doCleanup,
+  endScript
 } from '../src/actions';
 
 const CONNECTION = 'connection';
@@ -107,8 +113,7 @@ test('get repo side effect', () => {
   };
   const gen = getRepoSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(beginSagaPart, action));
-  expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repos/Meeshkan/redux-ize'));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repos/Meeshkan/redux-ize'));
   expect(gen.next({
     data: MOCK_GET_REPO_DATA
   }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_REPO_STMT, [110536681, "Meeshkan", 32298527, "redux-ize", "Meeshkan/redux-ize", "JavaScript", 0, 4, 4, 1, 53, 1, 1, 0, 1, new Date("2017-11-29T15:18:57Z").getTime(), new Date("2017-11-13T10:55:26Z").getTime(), new Date("2017-12-12T13:38:56Z").getTime(), "Meeshkan", 32298527, "redux-ize", "Meeshkan/redux-ize", "JavaScript", 0, 4, 4, 1, 53, 1, 1, 0, 1, new Date("2017-11-29T15:18:57Z").getTime(), new Date("2017-11-13T10:55:26Z").getTime(), new Date("2017-12-12T13:38:56Z").getTime()]));
@@ -120,7 +125,7 @@ test('get repo side effect', () => {
       _computationRepo: "redux-ize",
     }
   }));
-  expect(gen.next().value).toEqual(call(endSagaPart));
+  expect(gen.next().value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
 
@@ -137,12 +142,11 @@ test('get commit side effect', () => {
   };
   const gen = getCommitSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(beginSagaPart, action));
-  expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repos/Meeshkan/redux-ize/commits/84d1bbf0643eacaf94685155cd53ae170b561e1b'));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repos/Meeshkan/redux-ize/commits/84d1bbf0643eacaf94685155cd53ae170b561e1b'));
   expect(gen.next({
     data: MOCK_GET_COMMIT_DATA
   }).value).toEqual(call(sqlPromise, CONNECTION, INSERT_COMMIT_STMT, ["84d1bbf0643eacaf94685155cd53ae170b561e1b", 110536681, "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24, 110536681, "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "Mike Solomon", "mike@mikesolomon.org", new Date("2017-11-13T11:51:59Z").getTime(), "mikesol", 525350, "mikesol", 525350, 5455, 0, 5455, 24, 0, 24]));
-  expect(gen.next().value).toEqual(call(endSagaPart));
+  expect(gen.next().value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
 
@@ -158,8 +162,7 @@ test('get last side effect', () => {
   };
   const gen = getLastSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(beginSagaPart, action));
-  expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repos/redux-saga/redux-saga/commits'));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repos/redux-saga/redux-saga/commits'));
   expect(gen.next({
     headers: {
       link: '<https://api.github.com/repositories/47071941/commits?page=2>; rel="next", <https://api.github.com/repositories/47071941/commits?page=47>; rel="last"'
@@ -174,7 +177,7 @@ test('get last side effect', () => {
       _computationPage: 47
     }
   }));
-  expect(gen.next().value).toEqual(call(endSagaPart));
+  expect(gen.next().value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
 
@@ -188,8 +191,7 @@ test('get repos side effect', () => {
   };
   const gen = getReposSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(beginSagaPart, action));
-  expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repositories?since=308249'));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repositories?since=308249'));
   expect(gen.next({
     headers: {
       link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
@@ -636,7 +638,7 @@ test('get repos side effect', () => {
       _computationReposCount: 62,
     }
   }));
-  expect(gen.next().value).toEqual(call(endSagaPart));
+  expect(gen.next().value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
 
@@ -653,8 +655,7 @@ test('get commits side effect', () => {
   };
   const gen = getCommitsSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(beginSagaPart, action));
-  expect(gen.next(true).value).toEqual(call(axios, 'https://api.github.com/repositories/36535156/commits?page=33'));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repositories/36535156/commits?page=33'));
   expect(gen.next({
     headers: {
       link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
@@ -940,24 +941,38 @@ test('get commits side effect', () => {
       _computationRepo: 'redux'
     }
   }));
-  expect(gen.next().value).toEqual(call(endSagaPart));
+  expect(gen.next().value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
 
-test('end saga when there is remaining capacity', () => {
-  const gen = endSagaPart();
+test('do cleanup when there is remaining capacity and we are executing', () => {
+  const gen = doCleanupSideEffect();
   expect(gen.next().value).toEqual(put({
     type: DECREASE_EXECUTION_COUNT
   }))
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
-    remaining: 10
-  }).value).toEqual(put(getTasks(10)));
+    remaining: 10,
+    executing: 1
+  }).value).toEqual(put(getTasks(10, false)));
   expect(gen.next().done).toBe(true);
 });
 
-test('end saga when there is no remaining capacity but other units are executing', () => {
-  const gen = endSagaPart();
+test('do cleanup when there is remaining capacity and we are done executing', () => {
+  const gen = doCleanupSideEffect();
+  expect(gen.next().value).toEqual(put({
+    type: DECREASE_EXECUTION_COUNT
+  }))
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    remaining: 10,
+    executing: 0
+  }).value).toEqual(put(getTasks(10, true)));
+  expect(gen.next().done).toBe(true);
+});
+
+test('do cleanup when there is no remaining capacity and we are not executing', () => {
+  const gen = doCleanupSideEffect();
   expect(gen.next().value).toEqual(put({
     type: DECREASE_EXECUTION_COUNT
   }))
@@ -965,20 +980,28 @@ test('end saga when there is no remaining capacity but other units are executing
   expect(gen.next({
     remaining: 0,
     executing: 1
-  }).done).toBe(true);
+  }).done).toEqual(true);
 });
 
-test('end saga when there is no remaining capacity, other units are not executing locally, other units are executing on other servers and we have too few tasks to spawn something new', () => {
-  const gen = endSagaPart();
+test('do cleanup when there is no remaining capacity and we are done executing', () => {
+  const gen = doCleanupSideEffect();
   expect(gen.next().value).toEqual(put({
     type: DECREASE_EXECUTION_COUNT
   }))
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
-    connection: CONNECTION,
-    env: ENV,
-    remaining: -5,
+    remaining: 0,
     executing: 0
+  }).value).toEqual(put(endScript()));
+  expect(gen.next().done).toBe(true);
+});
+
+test('end script when we do not have enough tasks to spawn something new', () => {
+  const gen = endScriptSideEffect();
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    ...state,
+    remaining: -5
   }).value).toEqual(call(beginTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
   expect(gen.next([{
@@ -994,17 +1017,33 @@ test('end saga when there is no remaining capacity, other units are not executin
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 
-test('end saga when there is no remaining capacity, other units are not executing locally, other units are executing on other servers and we have enough tasks to spawn something new', () => {
-  const gen = endSagaPart();
-  expect(gen.next().value).toEqual(put({
-    type: DECREASE_EXECUTION_COUNT
-  }))
+test('end script when we have an insanely high remaining balance but no new tasks elsewhere', () => {
+  const gen = endScriptSideEffect();
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
-    connection: CONNECTION,
-    env: ENV,
-    remaining: -8,
-    executing: 0
+    ...state,
+    remaining: 10000
+  }).value).toEqual(call(beginTransaction, CONNECTION));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
+  expect(gen.next([{
+    unfulfilled: 30
+  }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
+  expect(gen.next([{
+    executing: 17
+  }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
+  // unfulfilled should be previous plus remaining as we are not over 60
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', 30, 30]));
+  expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
+  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
+  expect(gen.next().value).toEqual(call(exitProcess));
+});
+
+test('end script when we have enough tasks to spawn something new', () => {
+  const gen = endScriptSideEffect();
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    ...state,
+    remaining: -8
   }).value).toEqual(call(beginTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
   expect(gen.next([{
@@ -1079,56 +1118,31 @@ shutdown -h now
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 
-test('begin saga part with capacity', () => {
-  const gen = beginSagaPart({});
-  expect(gen.next().value).toEqual(put({
-    type: INCREASE_EXECUTION_COUNT
-  }));
+test('defer action', () => {
+  const action = {
+    type: 'foobar',
+    payload: {
+      type: 'a',
+      payload: 'b'
+    }
+  }
+  const gen = deferActionSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    remaining: 10
-  }).value).toEqual(put({
-    type: DECREASE_REMAINING
-  }));
-  const {
-    value,
-    done
-  } = gen.next();
-  expect(value).toEqual(true);
-  expect(done).toEqual(true);
-});
-
-test('begin saga part without capacity', () => {
-  const gen = beginSagaPart({
-    type: 'foo',
-    payload: 'bar'
-  });
-  expect(gen.next().value).toEqual(put({
-    type: INCREASE_EXECUTION_COUNT
-  }));
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    ...state,
-    remaining: 0
-  }).value).toEqual(put({
-    type: DECREASE_REMAINING
-  }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('my-uuid').value).toEqual(call(sqlPromise, CONNECTION, INSERT_DEFERRED_STMT, ['my-uuid', 'foo', JSON.stringify({
-    type: 'foo',
-    payload: 'bar'
+  expect(gen.next(state).value).toEqual(call(uuidv4));
+  expect(gen.next('my-uid').value).toEqual(call(sqlPromise, CONNECTION, INSERT_DEFERRED_STMT, ['my-uid', 'a', JSON.stringify({
+    type: 'a',
+    payload: 'b'
   })]));
-  const {
-    value,
-    done
-  } = gen.next();
-  expect(value).toEqual(false);
-  expect(done).toEqual(true);
+  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().done).toEqual(true);
 });
 
 test('get tasks side effect', () => {
   const gen = getTasksSideEffect({
-    payload: 3
+    payload: 3,
+    meta: {
+      endOnNoActions: true
+    }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
@@ -1159,9 +1173,39 @@ test('get tasks side effect', () => {
   expect(gen.next().done).toEqual(true);
 });
 
+test('get tasks side effect without tasks and ending on no actions', () => {
+  const gen = getTasksSideEffect({
+    payload: 3,
+    meta: {
+      endOnNoActions: true
+    }
+  });
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, ['GET_COMMIT', 'GET_COMMITS', 'GET_LAST', 'GET_REPO', 'GET_REPOS', 3]));
+  expect(gen.next([]).value).toEqual(put(endScript()));
+  expect(gen.next().done).toEqual(true);
+});
+
+test('get tasks side effect without tasks and not ending on no actions', () => {
+  const gen = getTasksSideEffect({
+    payload: 3,
+    meta: {
+      endOnNoActions: false
+    }
+  });
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, ['GET_COMMIT', 'GET_COMMITS', 'GET_LAST', 'GET_REPO', 'GET_REPOS', 3]));
+  expect(gen.next([]).done).toEqual(true);
+});
+
 test('github saga', () => {
   const gen = githubSaga();
   const fullSaga = [
+    gen.next(),
+    gen.next(),
+    gen.next(),
     gen.next(),
     gen.next(),
     gen.next(),
@@ -1175,7 +1219,10 @@ test('github saga', () => {
     takeEvery(GET_COMMITS, getCommitsSideEffect),
     takeEvery(GET_REPO, getRepoSideEffect),
     takeEvery(GET_REPOS, getReposSideEffect),
-    takeEvery(GET_TASKS, getTasksSideEffect)
+    takeEvery(GET_TASKS, getTasksSideEffect),
+    takeEvery(DEFER_ACTION, deferActionSideEffect),
+    takeEvery(DO_CLEANUP, doCleanupSideEffect),
+    takeEvery(END_SCRIPT, endScriptSideEffect)
   ];
   let i = 0;
   for (; i < sagaParts.length; i++) {
