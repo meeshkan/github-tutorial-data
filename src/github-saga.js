@@ -246,10 +246,11 @@ export function* getTasksSideEffect(action) {
       yield call(sqlPromise, connection, DELETE_DEFERRED_STMT(tasks), tasks.map(t => t.id));
       newActions = tasks.map(t => JSON.parse(t.json));
     }
+    yield call(commitTransaction, connection);
   } catch (e) {
-    yield call(rollbackTransaction, connection);
     console.error(e);
     Raven.captureException(e);
+    yield call(rollbackTransaction, connection);
   }
   if (newActions) {
     let i = 0;

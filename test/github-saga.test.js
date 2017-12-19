@@ -1179,6 +1179,7 @@ test('get tasks side effect', () => {
       json: '{"e":"f"}'
     },
   ]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ? OR id = ? OR id = ?;', ['x', 'y', 'z']));
+  expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
   expect(gen.next().value).toEqual(put({
     "a": "b"
   }));
@@ -1201,7 +1202,8 @@ test('get tasks side effect without tasks and ending on no actions', () => {
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, ['GET_COMMIT', 'GET_COMMITS', 'GET_LAST', 'GET_REPO', 'GET_REPOS', 3]));
-  expect(gen.next([]).value).toEqual(put(endScript()));
+  expect(gen.next([]).value).toEqual(call(commitTransaction, CONNECTION));
+  expect(gen.next().value).toEqual(put(endScript()));
   expect(gen.next().done).toEqual(true);
 });
 
@@ -1215,7 +1217,8 @@ test('get tasks side effect without tasks and not ending on no actions', () => {
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, ['GET_COMMIT', 'GET_COMMITS', 'GET_LAST', 'GET_REPO', 'GET_REPOS', 3]));
-  expect(gen.next([]).done).toEqual(true);
+  expect(gen.next([]).value).toEqual(call(commitTransaction, CONNECTION));
+  expect(gen.next().done).toEqual(true);
 });
 
 test('github saga', () => {
