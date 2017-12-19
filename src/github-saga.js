@@ -113,7 +113,6 @@ export function* endScriptSideEffect() {
     yield call(destroy, connection);
     let i = 0;
     for (; i < functionsToLaunch; i++) {
-      console.log("spawning new server");
       const uniqueId = yield call(uuidv4);
       const USER_DATA = `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
@@ -149,7 +148,7 @@ sudo shutdown -h now
       const createFunctionParams = {
         InstanceCount: 1,
         DryRun: JSON.parse(env.GITHUB_TUTORIAL_DRY_RUN || 'false'),
-        InstanceInitiatedShutdownBehavior: 'terminate',
+        InstanceInterruptionBehavior: 'terminate',
         LaunchSpecification: {
           InstanceType: 't2.micro',
           SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
@@ -168,15 +167,16 @@ sudo shutdown -h now
         SpotPrice: "0.0043",
         Type: "one-time"
       };
+      console.log(`will spawn new server ${uniqueId}`);
       yield call(createFunction, createFunctionParams);
       console.log("*** new server spawned");
       yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
-      console.log("*** new server registered");
+      console.log(`*** new server registered ${uniqueId}`);
     }
   } catch (e) {
-    yield call(rollbackTransaction, connection);
     console.error(e);
     Raven.captureException(e);
+    yield call(rollbackTransaction, connection);
     yield call(destroy, connection);
   } finally {
     // a forced exit would be necessary if, for example, the connection does not close

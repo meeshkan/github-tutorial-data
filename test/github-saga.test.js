@@ -1090,7 +1090,7 @@ sudo shutdown -h now
   const params = id => ({
     InstanceCount: 1,
     DryRun: true,
-    InstanceInitiatedShutdownBehavior: 'terminate',
+    InstanceInterruptionBehavior: 'terminate',
     LaunchSpecification: {
       InstanceType: 't2.micro',
       SubnetId: 'pfjegngwe',
