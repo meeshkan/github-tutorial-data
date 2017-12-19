@@ -51,9 +51,9 @@ export default async () => {
     }
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS commits (sha VARCHAR(40) PRIMARY KEY, repo_id INT, author_name VARCHAR(128), author_email VARCHAR(128), author_date BIGINT, committer_name VARCHAR(128), committer_email VARCHAR(128), committer_date BIGINT, author_login VARCHAR(128), author_id INT, committer_login VARCHAR(128), committer_id INT, additions INT, deletions INT, total INT, test_additions INT, test_deletions INT, test_changes INT);'); // create commit table
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS repos (id INT PRIMARY KEY, owner_login VARCHAR(128), owner_id INT, name VARCHAR(128), full_name VARCHAR(128), language VARCHAR(128), forks_count INT, stargazers_count INT, watchers_count INT, subscribers_count INT, size INT, has_issues INT, has_wiki INT, has_pages INT, has_downloads INT, pushed_at BIGINT, created_at BIGINT, updated_at BIGINT);'); // create repo table
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS deferred (id VARCHAR(36) PRIMARY_KEY, action VARCHAR(32), json TEXT);'); // create deferred table
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS unfulfilled (id VARCHAR(36) PRIMARY_KEY, unfulfilled INT);'); // redundant version of deferred that is used to estimate the number of servers to provision
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36) PRIMARY_KEY);'); // a global state machine for the number of executing servers
+    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS deferred (id VARCHAR(36) PRIMARY KEY, action VARCHAR(32), json TEXT);'); // create deferred table
+    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS unfulfilled (id VARCHAR(36) PRIMARY KEY, unfulfilled INT);'); // redundant version of deferred that is used to estimate the number of servers to provision
+    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36) PRIMARY KEY);'); // a global state machine for the number of executing servers
     const sagaMiddleware = createSagaMiddleware();
     const store = applyMiddleware(sagaMiddleware)(createStore)(reducers);
     sagaMiddleware.run(githubSaga);
