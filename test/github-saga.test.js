@@ -74,6 +74,7 @@ const ENV = {
   GITHUB_API: 'https://api.github.com',
   GITHUB_API_LIMIT: '60',
   MAX_COMMITS: '59',
+  START_REPO: '1234567',
   MAX_REPOS: '60001',
   MAX_COMPUTATIONS: '949',
   GITHUB_TUTORIAL_IMAGE_ID: 'ami-3511515',
@@ -1026,6 +1027,7 @@ export MY_SQL_PASSWORD="octocatrules" && \
 export MY_SQL_DATABASE="github" && \
 export MY_SQL_SSL="some ssl scheme" && \
 export GITHUB_API="https://api.github.com" && \
+export START_REPO="1234567" && \
 export MAX_REPOS="60001" && \
 export MAX_COMMITS="59" && \
 export SHOULD_STOP_FUNCTION="StopIt" && \
@@ -1039,9 +1041,10 @@ export GITHUB_TUTORIAL_SUBNET_ID="pfjegngwe" && \
 export GITHUB_TUTORIAL_SECURITY_GROUP_ID="lajfefwfk" && \
 export GITHUB_TUTORIAL_IAM_INSTANCE_ARN="arn:foo-bar" && \
 export GITHUB_TUTORIAL_IMAGE_ID="ami-3511515" && \
+mkdir $PACKAGE_FOLDER && \
+cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
-cd $PACKAGE_FOLDER && \
 node index.js
 shutdown -h now
 `;
@@ -1111,7 +1114,7 @@ test('begin saga part without capacity', () => {
     type: DECREASE_REMAINING
   }));
   expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('my-uuid').value).toEqual(call(sqlPromise, CONNECTION, INSERT_DEFERRED_STMT, ['my-uuid', JSON.stringify({
+  expect(gen.next('my-uuid').value).toEqual(call(sqlPromise, CONNECTION, INSERT_DEFERRED_STMT, ['my-uuid', 'foo', JSON.stringify({
     type: 'foo',
     payload: 'bar'
   })]));
@@ -1129,7 +1132,7 @@ test('get tasks side effect', () => {
   });
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next(state).value).toEqual(call(beginTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, ['GET_COMMIT', 'GET_COMMITS', 'GET_LAST', 'GET_REPO', 'GET_REPOS', 3]));
   ///DELETE FROM deferred WHERE
   expect(gen.next([{
       id: 'x',

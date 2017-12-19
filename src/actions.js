@@ -11,6 +11,13 @@ export const DECREASE_REMAINING = "DECREASE_REMAINING";
 export const INCREASE_EXECUTION_COUNT = "INCREASE_EXECUTION_COUNT";
 export const DECREASE_EXECUTION_COUNT = "DECREASE_EXECUTION_COUNT";
 
+export const initialAction = since => ({
+  type: GET_REPOS,
+  payload: {
+    _computationSince: since
+  }
+});
+
 export const increaseExecutionCount = () => ({
   type: INCREASE_EXECUTION_COUNT
 });

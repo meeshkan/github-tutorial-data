@@ -73,7 +73,7 @@ export function* beginSagaPart(action) {
   if (remaining <= 0) {
     // defer
     const uuid = yield call(uuidv4);
-    yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, JSON.stringify(action)]);
+    yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, action.type, JSON.stringify(action)]);
     return false;
   }
   return true;
@@ -127,6 +127,7 @@ export MY_SQL_PASSWORD="${env.MY_SQL_PASSWORD}" && \
 export MY_SQL_DATABASE="${env.MY_SQL_DATABASE}" && \
 export MY_SQL_SSL="${env.MY_SQL_SSL}" && \
 export GITHUB_API="${env.GITHUB_API}" && \
+export START_REPO="${env.START_REPO}" && \
 export MAX_REPOS="${env.MAX_REPOS}" && \
 export MAX_COMMITS="${env.MAX_COMMITS}" && \
 export SHOULD_STOP_FUNCTION="${env.SHOULD_STOP_FUNCTION}" && \
@@ -140,9 +141,10 @@ export GITHUB_TUTORIAL_SUBNET_ID="${env.GITHUB_TUTORIAL_SUBNET_ID}" && \
 export GITHUB_TUTORIAL_SECURITY_GROUP_ID="${env.GITHUB_TUTORIAL_SECURITY_GROUP_ID}" && \
 export GITHUB_TUTORIAL_IAM_INSTANCE_ARN="${env.GITHUB_TUTORIAL_IAM_INSTANCE_ARN}" && \
 export GITHUB_TUTORIAL_IMAGE_ID="${env.GITHUB_TUTORIAL_IMAGE_ID}" && \
+mkdir $PACKAGE_FOLDER && \
+cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
-cd $PACKAGE_FOLDER && \
 node index.js
 shutdown -h now
 `;
@@ -198,7 +200,7 @@ export function* getTasksSideEffect(action) {
   }
   let newActions = null;
   try {
-    const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
+    const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [GET_COMMIT, GET_COMMITS, GET_LAST, GET_REPO, GET_REPOS, payload]);
     if (tasks.length > 0) {
       yield call(sqlPromise, connection, DELETE_DEFERRED_STMT(tasks), tasks.map(t => t.id));
       newActions = tasks.map(t => JSON.parse(t.json));
