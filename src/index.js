@@ -4,6 +4,7 @@ import AWS from 'aws-sdk';
 import axios from 'axios';
 import urlparse from 'url-parse';
 import uuidv4 from 'uuid/v4';
+import { applyMiddleware, createStore } from 'redux';
 import createSagaMiddleware from 'redux-saga';
 import githubSaga from './github-saga';
 import reducers from './reducers';
