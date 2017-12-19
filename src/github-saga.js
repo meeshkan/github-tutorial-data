@@ -175,6 +175,7 @@ shutdown -h now
       }
     } catch (e) {
       yield call(rollbackTransaction, connection);
+      console.error(e);
       Raven.captureException(e);
       yield call(destroy, connection);
     } finally {
@@ -195,6 +196,7 @@ export function* getTasksSideEffect(action) {
   try {
     yield call(beginTransaction, connection);
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
     return;
   }
@@ -207,6 +209,7 @@ export function* getTasksSideEffect(action) {
     }
   } catch (e) {
     yield call(rollbackTransaction, connection);
+    console.error(e);
     Raven.captureException(e);
   }
   if (newActions) {
@@ -269,6 +272,7 @@ export function* getRepoSideEffect(action) {
       }
     });
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
@@ -318,6 +322,7 @@ export function* getReposSideEffect(action) {
       }
     }
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
@@ -351,6 +356,7 @@ export function* getLastSideEffect(action) {
       }
     }); // get commits
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
@@ -401,6 +407,7 @@ export function* getCommitsSideEffect(action) {
       }
     }
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
   } finally {
     yield call(endSagaPart);
@@ -447,6 +454,7 @@ export function* getCommitSideEffect(action) {
       repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes
     ]); // update commit
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
   } finally {
     yield call(endSagaPart);

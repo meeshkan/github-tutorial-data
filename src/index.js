@@ -66,6 +66,7 @@ export default async () => {
       store.dispatch(getTasks(parseInt(process.env.GITHUB_API_LIMIT)));
     }
   } catch (e) {
+    console.error(e);
     Raven.captureException(e);
     process.exit(1);
   }
