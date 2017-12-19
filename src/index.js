@@ -62,11 +62,12 @@ export default async () => {
     sagaMiddleware.run(githubSaga);
     store.dispatch(putConnection(connection));
     store.dispatch(putEnv(process.env));
-    store.dispatch(putRemaining(parseInt(limit.data.remaining)));
+    store.dispatch(putRemaining(parseInt(limit.data.rate.remaining)));
+    console.log(`starting batch with ${limit.data.rate.remaining}`);
     if (process.env.IS_INITIAL && JSON.parse(process.env.IS_INITIAL)) {   
       store.dispatch(initialAction(parseInt(process.env.START_REPO)));
     } else {
-      store.dispatch(getTasks(limit.data.remaining, true));
+      store.dispatch(getTasks(limit.data.rate.remaining, true));
     }
   } catch (e) {
     console.error(e);

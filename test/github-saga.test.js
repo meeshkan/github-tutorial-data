@@ -1085,7 +1085,7 @@ cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
-shutdown -h now
+sudo shutdown -h now
 `;
   const params = id => ({
     InstanceCount: 1,

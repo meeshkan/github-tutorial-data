@@ -61,9 +61,10 @@ for (; i < types.length; i++) {
       type,
       payload: 'foo'
     });
-    expect(store.dispatch.mock.calls.length).toBe(2);
+    expect(store.dispatch.mock.calls.length).toBe(3);
     expect(store.dispatch.mock.calls[0]).toEqual([increaseExecutionCount()]);
-    expect(store.dispatch.mock.calls[1]).toEqual([deferAction({
+    expect(store.dispatch.mock.calls[1]).toEqual([decreaseRemaining()]);
+    expect(store.dispatch.mock.calls[2]).toEqual([deferAction({
       type,
       payload: 'foo'
     })]);

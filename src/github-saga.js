@@ -113,6 +113,7 @@ export function* endScriptSideEffect() {
     yield call(destroy, connection);
     let i = 0;
     for (; i < functionsToLaunch; i++) {
+      console.log("spawning new server");
       const uniqueId = yield call(uuidv4);
       const USER_DATA = `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
@@ -143,7 +144,7 @@ cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
-shutdown -h now
+sudo shutdown -h now
 `;
       const createFunctionParams = {
         InstanceCount: 1,
@@ -168,7 +169,9 @@ shutdown -h now
         Type: "one-time"
       };
       yield call(createFunction, createFunctionParams);
+      console.log("*** new server spawned");
       yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
+      console.log("*** new server registered");
     }
   } catch (e) {
     yield call(rollbackTransaction, connection);
@@ -273,6 +276,7 @@ export function* getRepoSideEffect(action) {
     const pushed_at = repo && repo.data && repo.data.pushed_at ? new Date(repo.data.pushed_at).getTime() : null;
     const created_at = repo && repo.data && repo.data.created_at ? new Date(repo.data.created_at).getTime() : null;
     const updated_at = repo && repo.data && repo.data.updated_at ? new Date(repo.data.updated_at).getTime() : null;
+    console.log(`inserting repo ${full_name}`);
     yield call(sqlPromise, connection, INSERT_REPO_STMT, [
       id, owner_login, owner_id, name, full_name, language, forks_count, stargazers_count, watchers_count, subscribers_count, size, has_issues, has_wiki, has_pages, has_downloads, pushed_at, created_at, updated_at,
       owner_login, owner_id, name, full_name, language, forks_count, stargazers_count, watchers_count, subscribers_count, size, has_issues, has_wiki, has_pages, has_downloads, pushed_at, created_at, updated_at
@@ -318,6 +322,9 @@ export function* getReposSideEffect(action) {
           }
         }); // repo data
       }
+      if (Object.keys(repos.headers).indexOf('link') === -1) {
+        throw new Error(`header does not contain link: here are the headers ${Object.keys(repos.headers).join(',')}`);
+      }
       const next = /<(.|\n)*?>/g.exec(repos.headers['link'].split(',').filter(x => x.indexOf('rel="next"') !== -1)[0])[0].replace('<', '').replace('>', '');
       const since = parseInt(urlparse(next).query.substring(1).split('&').filter(x => x.indexOf('since=') !== -1)[0].split('=')[1]);
       const updatedCount = parseInt(payload._computationReposCount || 0) + useableRepos.length;
@@ -349,6 +356,9 @@ export function* getLastSideEffect(action) {
       payload
     } = action;
     const commit = yield call(axios, `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`);
+    if (Object.keys(commit.headers).indexOf('link') === -1) {
+      throw new Error(`header does not contain link: here are the headers ${Object.keys(commit.headers).join(',')}`);
+    }
     const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
     const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
     yield put({
@@ -447,6 +457,7 @@ export function* getCommitSideEffect(action) {
     const test_additions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.additions)).reduce((a, b) => a + b, 0) : null;
     const test_deletions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.deletions)).reduce((a, b) => a + b, 0) : null;
     const test_changes = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.changes)).reduce((a, b) => a + b, 0) : null;
+    console.log(`inserting commit ${sha}`);
     yield call(sqlPromise, connection, INSERT_COMMIT_STMT, [
       sha, repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes,
       repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes
