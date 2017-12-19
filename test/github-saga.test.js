@@ -37,6 +37,7 @@ import {
   SELECT_DEFERRED_STMT,
   DELETE_DEFERRED_STMT,
   SELECT_UNFULFILLED_STMT,
+  INCREASE_EXECUTING_STATEMENT,
   SELECT_EXECUTING_STATEMENT,
   DECREASE_EXECUTING_STATEMENT,
   CHANGE_UNFULFILLED_STATEMENT
@@ -64,6 +65,7 @@ import {
 
 const CONNECTION = 'connection';
 const ENV = {
+  GITHUB_TUTORIAL_UNIQUE_ID: 'my-unique-id',
   RAVEN_URL: "http://my.raven.url",
   SHOULD_STOP_FUNCTION: 'StopIt',
   PACKAGE_URL: 'http://foo.bar.com/package.zip',
@@ -980,10 +982,10 @@ test('end saga when there is no remaining capacity, other units are not executin
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
   expect(gen.next([{
     unfulfilled: 30
-  }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, ['executing']));
+  }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
   expect(gen.next([{
     executing: 17
-  }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['executing']));
+  }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
   // unfulfilled should be previous plus remaining as we are not over 60
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', 35, 35]));
   expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
@@ -1006,15 +1008,16 @@ test('end saga when there is no remaining capacity, other units are not executin
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, ['unfulfilled']));
   expect(gen.next([{
     unfulfilled: 143
-  }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, ['executing']));
+  }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
   expect(gen.next([{
     executing: 17
-  }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['executing']));
+  }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
   // we should spawn two tasks and have 143 old + 8 new - 120 for the two new tasks
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', 31, 31]));
   expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(destroy, CONNECTION));
-  const USER_DATA = `#!/bin/bash
+  const USER_DATA = id => `#!/bin/bash
+export GITHUB_TUTORIAL_UNIQUE_ID="${id}" && \
 export RAVEN_URL="http://my.raven.url" && \
 export MY_SQL_HOST="my.sql.cluster" && \
 export MY_SQL_PORT="3306" && \
@@ -1042,7 +1045,7 @@ cd $PACKAGE_FOLDER && \
 node index.js
 shutdown -h now
 `;
-  const params = {
+  const params = id => ({
     InstanceCount: 1,
     DryRun: true,
     InstanceInitiatedShutdownBehavior: 'terminate',
@@ -1059,13 +1062,17 @@ shutdown -h now
         Enabled: false
       },
       ImageId: 'ami-3511515',
-      UserData: new Buffer(USER_DATA).toString('base64')
+      UserData: new Buffer(USER_DATA(id)).toString('base64')
     },
     SpotPrice: "0.0043",
     Type: "one-time"
-  };
-  expect(gen.next().value).toEqual(call(createFunction, params));
-  expect(gen.next().value).toEqual(call(createFunction, params));
+  });
+  expect(gen.next().value).toEqual(call(uuidv4));
+  expect(gen.next('another-unique-id').value).toEqual(call(createFunction, params('another-unique-id')));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['another-unique-id']));
+  expect(gen.next().value).toEqual(call(uuidv4));
+  expect(gen.next('yet-another-unique-id').value).toEqual(call(createFunction, params('yet-another-unique-id')));
+  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['yet-another-unique-id']));
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 

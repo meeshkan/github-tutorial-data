@@ -51,8 +51,7 @@ export default async () => {
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS repos (id INT PRIMARY KEY, owner_login VARCHAR(128), owner_id INT, name VARCHAR(128), full_name VARCHAR(128), language VARCHAR(128), forks_count INT, stargazers_count INT, watchers_count INT, subscribers_count INT, size INT, has_issues INT, has_wiki INT, has_pages INT, has_downloads INT, pushed_at BIGINT, created_at BIGINT, updated_at BIGINT);'); // create repo table
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS deferred (id VARCHAR(36), json TEXT);'); // create deferred table
     await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS unfulfilled (id VARCHAR(36), unfulfilled INT);'); // redundant version of deferred that is used to estimate the number of servers to provision
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36), executing INT);'); // a global state machine for the number of executing servers
-    await sqlPromise(connection, `INSERT INTO executing (id, executing) VALUES ('executing', 1) ON DUPLICATE KEY UPDATE executing = executing + 1;`, []);
+    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36));'); // a global state machine for the number of executing servers
     const sagaMiddleware = createSagaMiddleware();
     const store = applyMiddleware(sagaMiddleware)(createStore)(reducers);
     sagaMiddleware.run(githubSaga);

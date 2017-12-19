@@ -28,6 +28,7 @@ import {
   SELECT_DEFERRED_STMT,
   DELETE_DEFERRED_STMT,
   SELECT_UNFULFILLED_STMT,
+  INCREASE_EXECUTING_STATEMENT,
   SELECT_EXECUTING_STATEMENT,
   DECREASE_EXECUTING_STATEMENT,
   CHANGE_UNFULFILLED_STATEMENT,
@@ -104,16 +105,20 @@ export function* endSagaPart() {
       const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, ['unfulfilled']); // get how many unfulfilled functions there are
       const unfulfilled = _unfulfilled.length > 0 ? parseInt(_unfulfilled[0].unfulfilled || 0) : 0;
       const totalUnfulfilled = unfulfilled + (remaining * -1); // the total unfulfilled is what is remaining from other machines plus this machine
-      const executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, ['executing']); // how many jobs are executing
+      const executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
       const totalExecuting = parseInt(executing[0].executing);
       const functionsToLaunch = Math.min((totalExecuting === 1 ? Math.ceil : Math.floor)(totalUnfulfilled / parseInt(env.GITHUB_API_LIMIT || 60)), parseInt(env.MAX_COMPUTATIONS || 950) - totalExecuting); // we launch enough machines to cover unfulfilled jobs while not going over our max
-      yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, ['executing']); // we decrease the number of executing jobs
+      yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, [env.GITHUB_TUTORIAL_UNIQUE_ID]); // we decrease the number of executing jobs
       const newUnfulfilled = Math.max((remaining * -1) + unfulfilled - (functionsToLaunch * parseInt(env.GITHUB_API_LIMIT)), 0); // the new amount of unfulfilled jobs after the launch
       yield call(sqlPromise, connection, CHANGE_UNFULFILLED_STATEMENT, ['unfulfilled', newUnfulfilled, newUnfulfilled]);
       yield call(commitTransaction, connection);
       // we don't need the connection anymore, so we release it to the pool
       yield call(destroy, connection);
-      const USER_DATA = `#!/bin/bash
+      let i = 0;
+      for (; i < functionsToLaunch; i++) {
+        const uniqueId = yield call(uuidv4);
+        const USER_DATA = `#!/bin/bash
+export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
 export RAVEN_URL="${env.RAVEN_URL}" && \
 export MY_SQL_HOST="${env.MY_SQL_HOST}" && \
 export MY_SQL_PORT="${env.MY_SQL_PORT}" && \
@@ -141,8 +146,6 @@ cd $PACKAGE_FOLDER && \
 node index.js
 shutdown -h now
 `;
-      let i = 0;
-      for (; i < functionsToLaunch; i++) {
         const createFunctionParams = {
           InstanceCount: 1,
           DryRun: JSON.parse(env.GITHUB_TUTORIAL_DRY_RUN || 'false'),
@@ -166,6 +169,7 @@ shutdown -h now
           Type: "one-time"
         };
         yield call(createFunction, createFunctionParams);
+        yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
       }
     } catch (e) {
       yield call(rollbackTransaction, connection);

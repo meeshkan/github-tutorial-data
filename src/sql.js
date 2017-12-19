@@ -4,6 +4,7 @@ export const INSERT_DEFERRED_STMT = 'INSERT INTO deferred (id, json) VALUES (?, 
 export const SELECT_DEFERRED_STMT = 'SELECT id, json FROM deferred LIMIT ?;';
 export const DELETE_DEFERRED_STMT = tasks => `DELETE FROM deferred WHERE ${tasks.map(x => 'id = ?').join(' OR ')};`;
 export const SELECT_UNFULFILLED_STMT = 'SELECT unfulfilled FROM unfulfilled WHERE id = ?;';
-export const SELECT_EXECUTING_STATEMENT = 'SELECT executing FROM executing WHERE id = ?';
-export const DECREASE_EXECUTING_STATEMENT = 'UPDATE executing SET executing = executing - 1 WHERE id = ?;';
+export const INCREASE_EXECUTING_STATEMENT = 'INSERT INTO executing (id) VALUES (?);';
+export const SELECT_EXECUTING_STATEMENT = 'SELECT COUNT(*) AS executing FROM executing;';
+export const DECREASE_EXECUTING_STATEMENT = 'DELETE FROM executing WHERE id = ?;';
 export const CHANGE_UNFULFILLED_STATEMENT = 'INSERT INTO unfulfilled (id, unfulfilled) VALUES (?,?) ON DUPLICATE KEY UPDATE unfulfilled = ?;';
