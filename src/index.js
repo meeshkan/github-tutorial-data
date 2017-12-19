@@ -53,6 +53,8 @@ export default async () => {
       return;
     }
     if (process.env.IS_INITIAL && JSON.parse(process.env.IS_INITIAL)) {
+      await sqlPromise(connection, `SET tx_isolation = 'READ-COMMITTED';`);
+      await sqlPromise(connection, `SET GLOBAL tx_isolation = 'READ-COMMITTED';`);
       await sqlPromise(connection, 'DROP TABLE IF EXISTS commits;');
       await sqlPromise(connection, 'DROP TABLE IF EXISTS repos;');
       await sqlPromise(connection, 'DROP TABLE IF EXISTS deferred;');

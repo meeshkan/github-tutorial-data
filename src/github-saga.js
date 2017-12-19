@@ -151,7 +151,8 @@ export GITHUB_TUTORIAL_IMAGE_ID="${env.GITHUB_TUTORIAL_IMAGE_ID}" && \
 export GITHUB_TUTORIAL_KEY_NAME="${env.GITHUB_TUTORIAL_KEY_NAME}" && \
 cd ~ && \
 curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.6/install.sh | bash && \
-. ~/.nvm/nvm.sh && \
+export NVM_DIR="$HOME/.nvm" && \
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && \
 nvm install 6.11.5 && \
 mkdir $PACKAGE_FOLDER && \
 cd $PACKAGE_FOLDER && \
