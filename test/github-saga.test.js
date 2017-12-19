@@ -1091,8 +1091,10 @@ export GITHUB_TUTORIAL_SECURITY_GROUP_ID="lajfefwfk" && \
 export GITHUB_TUTORIAL_IAM_INSTANCE_ARN="arn:foo-bar" && \
 export GITHUB_TUTORIAL_IMAGE_ID="ami-3511515" && \
 export GITHUB_TUTORIAL_KEY_NAME="my-key-name" && \
-sudo apt-get -y update && \
-sudo apt-get -y dist-upgrade && \
+cd ~ && \
+curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.6/install.sh | bash && \
+. ~/.nvm/nvm.sh && \
+nvm install 6.11.5 && \
 mkdir $PACKAGE_FOLDER && \
 cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \

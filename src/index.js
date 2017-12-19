@@ -52,10 +52,16 @@ export default async () => {
     if (JSON.parse(shouldStop.Payload)) {
       return;
     }
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS commits (sha VARCHAR(40) PRIMARY KEY, repo_id INT, author_name VARCHAR(128), author_email VARCHAR(128), author_date BIGINT, committer_name VARCHAR(128), committer_email VARCHAR(128), committer_date BIGINT, author_login VARCHAR(128), author_id INT, committer_login VARCHAR(128), committer_id INT, additions INT, deletions INT, total INT, test_additions INT, test_deletions INT, test_changes INT);'); // create commit table
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS repos (id INT PRIMARY KEY, owner_login VARCHAR(128), owner_id INT, name VARCHAR(128), full_name VARCHAR(128), language VARCHAR(128), forks_count INT, stargazers_count INT, watchers_count INT, subscribers_count INT, size INT, has_issues INT, has_wiki INT, has_pages INT, has_downloads INT, pushed_at BIGINT, created_at BIGINT, updated_at BIGINT);'); // create repo table
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS deferred (id VARCHAR(36) PRIMARY KEY, action VARCHAR(32), json TEXT);'); // create deferred table
-    await sqlPromise(connection, 'CREATE TABLE IF NOT EXISTS executing (id VARCHAR(36) PRIMARY KEY);'); // a global state machine for the number of executing servers
+    if (process.env.IS_INITIAL && JSON.parse(process.env.IS_INITIAL)) {
+      await sqlPromise(connection, 'DROP TABLE IF EXISTS commits;');
+      await sqlPromise(connection, 'DROP TABLE IF EXISTS repos;');
+      await sqlPromise(connection, 'DROP TABLE IF EXISTS deferred;');
+      await sqlPromise(connection, 'DROP TABLE IF EXISTS executing;');
+      await sqlPromise(connection, 'CREATE TABLE commits (sha VARCHAR(40) PRIMARY KEY, repo_id INT, author_name VARCHAR(128), author_email VARCHAR(128), author_date BIGINT, committer_name VARCHAR(128), committer_email VARCHAR(128), committer_date BIGINT, author_login VARCHAR(128), author_id INT, committer_login VARCHAR(128), committer_id INT, additions INT, deletions INT, total INT, test_additions INT, test_deletions INT, test_changes INT);'); // create commit table
+      await sqlPromise(connection, 'CREATE TABLE repos (id INT PRIMARY KEY, owner_login VARCHAR(128), owner_id INT, name VARCHAR(128), full_name VARCHAR(128), language VARCHAR(128), forks_count INT, stargazers_count INT, watchers_count INT, subscribers_count INT, size INT, has_issues INT, has_wiki INT, has_pages INT, has_downloads INT, pushed_at BIGINT, created_at BIGINT, updated_at BIGINT);'); // create repo table
+      await sqlPromise(connection, 'CREATE TABLE deferred (id VARCHAR(36) PRIMARY KEY, action VARCHAR(32), json TEXT);'); // create deferred table
+      await sqlPromise(connection, 'CREATE TABLE executing (id VARCHAR(36) PRIMARY KEY);'); // a global state machine for the number of executing servers
+    }
     const sagaMiddleware = createSagaMiddleware();
     const store = applyMiddleware(endScriptMiddleware, deferralMiddleware, sagaMiddleware)(createStore)(reducers);
     sagaMiddleware.run(githubSaga);
