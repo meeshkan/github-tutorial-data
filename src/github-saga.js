@@ -395,7 +395,9 @@ export function* getLastSideEffect(action) {
     }
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    if (!(e.response && e.response.status && (e.response.status === "409" || e.response.status === 409))) {
+      Raven.captureException(e);
+    }
   } finally {
     yield put(doCleanup());
   }
