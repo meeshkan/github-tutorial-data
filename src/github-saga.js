@@ -9,6 +9,7 @@ import {
   END_SCRIPT,
   DEFER_ACTION,
   getTasks,
+  deferAction,
   decreaseRemaining,
   increaseExecutionCount,
   decreaseExecutionCount,
@@ -58,6 +59,7 @@ import {
 import AWS from 'aws-sdk';
 
 export const stateSelector = $ => $;
+export const EAI_AGAIN = "EAI_AGAIN";
 
 export const createFunction = params => new Promise((resolve, reject) => new AWS.EC2({
   region: 'us-east-1'
@@ -67,10 +69,11 @@ export const easyMD5 = data => crypto.createHash('md5').update(data).digest("hex
 export const exitProcess = () => process.exit(0);
 
 export function* deferActionSideEffect(action) {
+  const {
+    connection,
+    env
+  } = yield select(stateSelector);
   try {
-    const {
-      connection
-    } = yield select(stateSelector);
     const {
       payload
     } = action;
@@ -78,25 +81,17 @@ export function* deferActionSideEffect(action) {
     yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, payload.type, JSON.stringify(payload)]);
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
   } finally {
     yield put(doCleanup());
   }
 }
 
 export const getFunctionsToLaunch = (unfulfilled, executing, maxComputations) => {
-  if (executing === 0 && unfulfilled > 0) {
-    // will only ever be first case
-    return 2;
-  }
   if (unfulfilled === 0) {
     return 0;
   }
-  if (executing < (maxComputations / 2)) {
-    return 1 + (Math.random() > 2 * executing / maxComputations ? 1 : 0);
-  } else {
-    return Math.random() > (executing / maxComputations - 0.5) * 2 ? 1 : 0;
-  }
+  return 1 + (Math.random() > executing / maxComputations ? 1 : 0);
 }
 
 export function* endScriptSideEffect() {
@@ -137,7 +132,7 @@ export GITHUB_API="${env.GITHUB_API}" && \
 export START_REPO="${env.START_REPO}" && \
 export MAX_REPOS="${env.MAX_REPOS}" && \
 export MAX_COMMITS="${env.MAX_COMMITS}" && \
-export SHOULD_STOP_FUNCTION="${env.SHOULD_STOP_FUNCTION}" && \
+export MONITOR_FUNCTION="${env.MONITOR_FUNCTION}" && \
 export MAX_COMPUTATIONS="${env.MAX_COMPUTATIONS}" && \
 export PACKAGE_URL="${env.PACKAGE_URL}" && \
 export PACKAGE_NAME="${env.PACKAGE_NAME}" && \
@@ -196,7 +191,7 @@ ${parseInt(env.SCRIPT_EPOCH || 0) > 2 ? 'sudo shutdown -h now' : ''}
     }
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
     yield call(rollbackTransaction, connection);
   } finally {
     yield call(destroy, connection);
@@ -236,7 +231,7 @@ export function* getTasksSideEffect(action) {
     yield call(beginTransaction, connection);
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
     return;
   }
   let newActions = null;
@@ -249,7 +244,7 @@ export function* getTasksSideEffect(action) {
     yield call(commitTransaction, connection);
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
     yield call(rollbackTransaction, connection);
   }
   if (newActions) {
@@ -313,7 +308,10 @@ export function* getRepoSideEffect(action) {
     });
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
+    if (e.code && e.code === EAI_AGAIN) {
+      yield put(deferAction(action));
+    }
   } finally {
     yield put(doCleanup());
   }
@@ -362,7 +360,10 @@ export function* getReposSideEffect(action) {
     }
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
+    if (e.code && e.code === EAI_AGAIN) {
+      yield put(deferAction(action));
+    }
   } finally {
     yield put(doCleanup());
   }
@@ -396,7 +397,10 @@ export function* getLastSideEffect(action) {
   } catch (e) {
     console.error(e);
     if (!(e.response && e.response.status && (e.response.status === "409" || e.response.status === 409))) {
-      Raven.captureException(e);
+      env.RAVEN_URL && Raven.captureException(e);
+    }
+    if (e.code && e.code === EAI_AGAIN) {
+      yield put(deferAction(action));
     }
   } finally {
     yield put(doCleanup());
@@ -444,7 +448,10 @@ export function* getCommitsSideEffect(action) {
     }
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
+    if (e.code && e.code === EAI_AGAIN) {
+      yield put(deferAction(action));
+    }
   } finally {
     yield put(doCleanup());
   }
@@ -488,7 +495,10 @@ export function* getCommitSideEffect(action) {
     ]); // update commit
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
+    env.RAVEN_URL && Raven.captureException(e);
+    if (e.code && e.code === EAI_AGAIN) {
+      yield put(deferAction(action));
+    }
   } finally {
     yield put(doCleanup());
   }

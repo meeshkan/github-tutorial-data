@@ -23,36 +23,38 @@ import {
 import Raven from 'raven';
 
 export default async () => {
-  Raven.config(process.env.RAVEN_URL).install();
-  const connection = mysql.createConnection({
-    host: process.env.MY_SQL_HOST,
-    port: process.env.MY_SQL_PORT,
-    user: process.env.MY_SQL_USERNAME,
-    password: process.env.MY_SQL_PASSWORD,
-    database: process.env.MY_SQL_DATABASE,
-    ssl: process.env.MY_SQL_SSL,
-    supportBigNumbers: true,
-    bigNumberStrings: true,
-  });
-  // try opening the connection
   try {
-    await new Promise((resolve, reject) => connection.connect(e => e ? reject(e) : resolve()));
-  } catch (e) {
-    Raven.captureException(e);
-    connection.destroy();
-    return;
-  }
-  try {
-    const limit = await axios(`${process.env.GITHUB_API}/rate_limit`);
-    const shouldStop = await new Promise((resolve, reject) => new AWS.Lambda({region: 'us-east-1'}).invoke({
+    const populateEnvFromMonitorData = (monitorData, env) => _.fromPairs(_.uniq(Object.keys(monitorData).concat(Object.keys(env))).map(key => [key, monitorData[key] || env[key]]));
+    const monitorData = await new Promise((resolve, reject) => new AWS.Lambda({region: 'us-east-1'}).invoke({
       InvocationType: 'RequestResponse',
-      FunctionName: process.env.SHOULD_STOP_FUNCTION,
+      FunctionName: process.env.MONITOR_FUNCTION,
       Payload: JSON.stringify({})
-    }, (e, r) => e ? reject(e) : resolve(r)));
-    if (JSON.parse(shouldStop.Payload)) {
+    }, (e, r) => e ? reject(e) : resolve(JSON.parse(r.Payload))));
+    const env = populateEnvFromMonitorData(monitorData, process.env);
+    if (env.SHOULD_STOP_GITHUB_TUTORIAL_EXECUTION) {
       return;
     }
-    if (process.env.IS_INITIAL && JSON.parse(process.env.IS_INITIAL)) {
+    env.RAVEN_URL && Raven.config(env.RAVEN_URL).install();
+    const connection = mysql.createConnection({
+      host: env.MY_SQL_HOST,
+      port: env.MY_SQL_PORT,
+      user: env.MY_SQL_USERNAME,
+      password: env.MY_SQL_PASSWORD,
+      database: env.MY_SQL_DATABASE,
+      ssl: env.MY_SQL_SSL,
+      supportBigNumbers: true,
+      bigNumberStrings: true,
+    });
+    // try opening the connection
+    try {
+      await new Promise((resolve, reject) => connection.connect(e => e ? reject(e) : resolve()));
+    } catch (e) {
+      env.RAVEN_URL && Raven.captureException(e);
+      connection.destroy();
+      return;
+    }
+    const limit = await axios(`${env.GITHUB_API}/rate_limit`);
+    if (env.IS_INITIAL && JSON.parse(env.IS_INITIAL)) {
       await sqlPromise(connection, 'DROP TABLE IF EXISTS commits;');
       await sqlPromise(connection, 'DROP TABLE IF EXISTS repos;');
       await sqlPromise(connection, 'DROP TABLE IF EXISTS deferred;');
@@ -66,17 +68,16 @@ export default async () => {
     const store = applyMiddleware(endScriptMiddleware, deferralMiddleware, sagaMiddleware)(createStore)(reducers);
     sagaMiddleware.run(githubSaga);
     store.dispatch(putConnection(connection));
-    store.dispatch(putEnv(process.env));
+    store.dispatch(putEnv(env));
     store.dispatch(putRemaining(parseInt(limit.data.rate.remaining)));
     console.log(`starting batch with ${limit.data.rate.remaining}`);
-    if (process.env.IS_INITIAL && JSON.parse(process.env.IS_INITIAL)) {   
-      store.dispatch(initialAction(parseInt(process.env.START_REPO)));
+    if (env.IS_INITIAL && JSON.parse(env.IS_INITIAL)) {   
+      store.dispatch(initialAction(parseInt(env.START_REPO)));
     } else {
       store.dispatch(getTasks(limit.data.rate.remaining, true));
     }
   } catch (e) {
     console.error(e);
-    Raven.captureException(e);
     process.exit(1);
   }
 }

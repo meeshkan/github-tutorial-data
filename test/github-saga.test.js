@@ -75,7 +75,7 @@ const ENV = {
   SCRIPT_EPOCH: 0,
   GITHUB_TUTORIAL_UNIQUE_ID: 'my-unique-id',
   RAVEN_URL: "http://my.raven.url",
-  SHOULD_STOP_FUNCTION: 'StopIt',
+  MONITOR_FUNCTION: 'StopIt',
   PACKAGE_URL: 'http://foo.bar.com/package.zip',
   PACKAGE_NAME: 'package.zip',
   PACKAGE_FOLDER: 'package',
@@ -1047,7 +1047,7 @@ test('get fucntions to launch', () => {
   expect(getFunctionsToLaunch(43,81,900)).toBeLessThanOrEqual(2);
   expect(getFunctionsToLaunch(403,882,900)).toBeLessThanOrEqual(2);
   expect(getFunctionsToLaunch(33,88,1)).toBeGreaterThanOrEqual(0);
-  expect(getFunctionsToLaunch(403,882,10)).toBe(0);
+  expect(getFunctionsToLaunch(403,882,10)).toBe(1);
 });
 
 test('end script when we have enough tasks to spawn something new', () => {
@@ -1079,7 +1079,7 @@ export GITHUB_API="https://api.github.com" && \
 export START_REPO="1234567" && \
 export MAX_REPOS="60001" && \
 export MAX_COMMITS="59" && \
-export SHOULD_STOP_FUNCTION="StopIt" && \
+export MONITOR_FUNCTION="StopIt" && \
 export MAX_COMPUTATIONS="949" && \
 export PACKAGE_URL="http://foo.bar.com/package.zip" && \
 export PACKAGE_NAME="package.zip" && \
