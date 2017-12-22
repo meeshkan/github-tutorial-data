@@ -61,8 +61,8 @@ import AWS from 'aws-sdk';
 export const stateSelector = $ => $;
 export const EAI_AGAIN = "EAI_AGAIN";
 
-export const createFunction = params => new Promise((resolve, reject) => new AWS.EC2({
-  region: 'us-east-1'
+export const createFunction = (params, env) => new Promise((resolve, reject) => new AWS.EC2({
+  region: env.GITHUB_TUTORIAL_AWS_REGION
 }).requestSpotInstances(params, (e, r) => e ? reject(e) : resolve(r)));
 export const easyMD5 = data => crypto.createHash('md5').update(data).digest("hex").substring(0, 8);
 
@@ -104,14 +104,11 @@ export function* endScriptSideEffect() {
     // otherwise, we could get into the situation where we spawn too many servers
     // basically, if we have unfulfilled jobs, then we taper off the number of launched servers once we get to half max capacity
     // this will result in a bit of waste in the end but it is easier than other types of bookkeeping
-    yield call(beginTransaction, connection);
-    // unfulfilled
     const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, []); // get how many unfulfilled functions there are
     const unfulfilled = _unfulfilled.length > 0 ? parseInt(_unfulfilled[0].unfulfilled || 0) : 0;
     const _executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
     const executing = parseInt(_executing[0].executing);
     yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, [env.GITHUB_TUTORIAL_UNIQUE_ID]); // we decrease the number of executing jobs
-    yield call(commitTransaction, connection);
     const maxComputations = parseInt(env.MAX_COMPUTATIONS || 0);
     const functionsToLaunch = yield call(getFunctionsToLaunch, unfulfilled, executing, maxComputations);
     // we don't need the connection anymore, so we release it to the pool
@@ -135,6 +132,7 @@ export MAX_COMPUTATIONS="${env.MAX_COMPUTATIONS}" && \
 export PACKAGE_URL="${env.PACKAGE_URL}" && \
 export PACKAGE_NAME="${env.PACKAGE_NAME}" && \
 export PACKAGE_FOLDER="${env.PACKAGE_FOLDER}" && \
+export GITHUB_TUTORIAL_AWS_REGION="${env.GITHUB_TUTORIAL_AWS_REGION}" && \
 export GITHUB_TUTORIAL_SPOT_PRICE="${env.GITHUB_TUTORIAL_SPOT_PRICE}" && \
 export GITHUB_TUTORIAL_DRY_RUN="${env.GITHUB_TUTORIAL_DRY_RUN}" && \
 export GITHUB_TUTORIAL_SUBNET_ID="${env.GITHUB_TUTORIAL_SUBNET_ID}" && \
@@ -179,7 +177,7 @@ sudo shutdown -h now
       };
       console.log(`will spawn new server ${uniqueId}`);
       try {
-        yield call(createFunction, createFunctionParams);
+        yield call(createFunction, createFunctionParams, env);
       } catch (e) {
         if (e.code !== 'DryRunOperation') {
           throw e;
@@ -190,7 +188,6 @@ sudo shutdown -h now
   } catch (e) {
     console.error(e);
     env.RAVEN_URL && Raven.captureException(e);
-    yield call(rollbackTransaction, connection);
   } finally {
     yield call(destroy, connection);
     // a forced exit would be necessary if, for example, the connection does not close

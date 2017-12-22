@@ -26,7 +26,7 @@ import Raven from 'raven';
 export default async () => {
   try {
     const populateEnvFromMonitorData = (monitorData, env) => _.fromPairs(_.uniq(Object.keys(monitorData).concat(Object.keys(env))).map(key => [key, monitorData[key] || env[key]]));
-    const monitorData = await new Promise((resolve, reject) => new AWS.Lambda({region: 'us-east-1'}).invoke({
+    const monitorData = await new Promise((resolve, reject) => new AWS.Lambda({region: process.env.GITHUB_TUTORIAL_AWS_REGION}).invoke({
       InvocationType: 'RequestResponse',
       FunctionName: process.env.MONITOR_FUNCTION,
       Payload: JSON.stringify({})

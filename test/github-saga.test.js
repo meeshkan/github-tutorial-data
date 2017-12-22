@@ -75,6 +75,7 @@ const ENV = {
   GITHUB_TUTORIAL_UNIQUE_ID: 'my-unique-id',
   RAVEN_URL: "http://my.raven.url",
   MONITOR_FUNCTION: 'StopIt',
+  GITHUB_TUTORIAL_AWS_REGION: "us-east-1",
   PACKAGE_URL: 'http://foo.bar.com/package.zip',
   PACKAGE_NAME: 'package.zip',
   PACKAGE_FOLDER: 'package',
@@ -166,8 +167,7 @@ test('get last side effect for empty repo', () => {
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repos/mikesol/empty-repo/commits'));
   expect(gen.next({
-    headers: {
-    }
+    headers: {}
   }).value).toEqual(put(doCleanup()));
   expect(gen.next().done).toBe(true);
 });
@@ -1023,30 +1023,28 @@ test('end script when we do not have enough tasks to spawn something new', () =>
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state
-  }).value).toEqual(call(beginTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, []));
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, []));
   expect(gen.next([{
     unfulfilled: 30
   }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
   expect(gen.next([{
     executing: 17
   }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
-  expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(getFunctionsToLaunch, 30, 17, 949));
   expect(gen.next(0).value).toEqual(call(destroy, CONNECTION));
   expect(gen.next().value).toEqual(call(exitProcess));
 });
 
 test('get fucntions to launch', () => {
-  expect(getFunctionsToLaunch(1,0,1)).toBe(2);
-  expect(getFunctionsToLaunch(0,1,1)).toBe(0);
-  expect(getFunctionsToLaunch(5,1,1)).toBeLessThanOrEqual(2);
-  expect(getFunctionsToLaunch(33,88,900)).toBeLessThanOrEqual(2);
-  expect(getFunctionsToLaunch(33,88,900)).toBeLessThanOrEqual(2);
-  expect(getFunctionsToLaunch(43,81,900)).toBeLessThanOrEqual(2);
-  expect(getFunctionsToLaunch(403,882,900)).toBeLessThanOrEqual(2);
-  expect(getFunctionsToLaunch(33,88,1)).toBeGreaterThanOrEqual(0);
-  expect(getFunctionsToLaunch(403,882,10)).toBe(1);
+  expect(getFunctionsToLaunch(1, 0, 1)).toBe(2);
+  expect(getFunctionsToLaunch(0, 1, 1)).toBe(0);
+  expect(getFunctionsToLaunch(5, 1, 1)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(33, 88, 900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(33, 88, 900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(43, 81, 900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(403, 882, 900)).toBeLessThanOrEqual(2);
+  expect(getFunctionsToLaunch(33, 88, 1)).toBeGreaterThanOrEqual(0);
+  expect(getFunctionsToLaunch(403, 882, 10)).toBe(1);
 });
 
 test('end script when we have enough tasks to spawn something new', () => {
@@ -1054,15 +1052,13 @@ test('end script when we have enough tasks to spawn something new', () => {
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state
-  }).value).toEqual(call(beginTransaction, CONNECTION));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, []));
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_UNFULFILLED_STMT, []));
   expect(gen.next([{
     unfulfilled: 143
   }]).value).toEqual(call(sqlPromise, CONNECTION, SELECT_EXECUTING_STATEMENT, []));
   expect(gen.next([{
     executing: 17
   }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
-  expect(gen.next().value).toEqual(call(commitTransaction, CONNECTION));
   expect(gen.next().value).toEqual(call(getFunctionsToLaunch, 143, 17, 949));
   const USER_DATA = id => `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${id}" && \
@@ -1081,6 +1077,7 @@ export MAX_COMPUTATIONS="949" && \
 export PACKAGE_URL="http://foo.bar.com/package.zip" && \
 export PACKAGE_NAME="package.zip" && \
 export PACKAGE_FOLDER="package" && \
+export GITHUB_TUTORIAL_AWS_REGION="us-east-1" && \
 export GITHUB_TUTORIAL_SPOT_PRICE="0.0041" && \
 export GITHUB_TUTORIAL_DRY_RUN="true" && \
 export GITHUB_TUTORIAL_SUBNET_ID="pfjegngwe" && \
@@ -1124,10 +1121,10 @@ sudo shutdown -h now
     Type: "one-time"
   });
   expect(gen.next(2).value).toEqual(call(uuidv4));
-  expect(gen.next('another-unique-id').value).toEqual(call(createFunction, params('another-unique-id')));
+  expect(gen.next('another-unique-id').value).toEqual(call(createFunction, params('another-unique-id'), ENV));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['another-unique-id']));
   expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('yet-another-unique-id').value).toEqual(call(createFunction, params('yet-another-unique-id')));
+  expect(gen.next('yet-another-unique-id').value).toEqual(call(createFunction, params('yet-another-unique-id'), ENV));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['yet-another-unique-id']));
   expect(gen.next().value).toEqual(call(destroy, CONNECTION));
   expect(gen.next().value).toEqual(call(exitProcess));
