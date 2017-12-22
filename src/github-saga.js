@@ -147,6 +147,7 @@ cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
+sleep 120
 sudo shutdown -h now
 `;
       const createFunctionParams = {
