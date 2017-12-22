@@ -72,7 +72,6 @@ import {
 
 const CONNECTION = 'connection';
 const ENV = {
-  SCRIPT_EPOCH: 0,
   GITHUB_TUTORIAL_UNIQUE_ID: 'my-unique-id',
   RAVEN_URL: "http://my.raven.url",
   MONITOR_FUNCTION: 'StopIt',
@@ -80,7 +79,6 @@ const ENV = {
   PACKAGE_NAME: 'package.zip',
   PACKAGE_FOLDER: 'package',
   GITHUB_API: 'https://api.github.com',
-  GITHUB_API_LIMIT: '60',
   MAX_COMMITS: '59',
   START_REPO: '1234567',
   MAX_REPOS: '60001',
@@ -91,6 +89,7 @@ const ENV = {
   MY_SQL_HOST: 'my.sql.cluster',
   MY_SQL_USERNAME: 'meeshkan',
   MY_SQL_PASSWORD: 'octocatrules',
+  GITHUB_TUTORIAL_SPOT_PRICE: '0.0041',
   GITHUB_TUTORIAL_SUBNET_ID: 'pfjegngwe',
   GITHUB_TUTORIAL_SECURITY_GROUP_ID: 'lajfefwfk',
   GITHUB_TUTORIAL_IAM_INSTANCE_ARN: 'arn:foo-bar',
@@ -1067,7 +1066,6 @@ test('end script when we have enough tasks to spawn something new', () => {
   expect(gen.next().value).toEqual(call(getFunctionsToLaunch, 143, 17, 949));
   const USER_DATA = id => `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${id}" && \
-export SCRIPT_EPOCH="1" && \
 export RAVEN_URL="http://my.raven.url" && \
 export MY_SQL_HOST="my.sql.cluster" && \
 export MY_SQL_PORT="3306" && \
@@ -1076,7 +1074,6 @@ export MY_SQL_PASSWORD="octocatrules" && \
 export MY_SQL_DATABASE="github" && \
 export MY_SQL_SSL="some ssl scheme" && \
 export GITHUB_API="https://api.github.com" && \
-export START_REPO="1234567" && \
 export MAX_REPOS="60001" && \
 export MAX_COMMITS="59" && \
 export MONITOR_FUNCTION="StopIt" && \
@@ -1084,7 +1081,7 @@ export MAX_COMPUTATIONS="949" && \
 export PACKAGE_URL="http://foo.bar.com/package.zip" && \
 export PACKAGE_NAME="package.zip" && \
 export PACKAGE_FOLDER="package" && \
-export GITHUB_API_LIMIT="60" && \
+export GITHUB_TUTORIAL_SPOT_PRICE="0.0041" && \
 export GITHUB_TUTORIAL_DRY_RUN="true" && \
 export GITHUB_TUTORIAL_SUBNET_ID="pfjegngwe" && \
 export GITHUB_TUTORIAL_SECURITY_GROUP_ID="lajfefwfk" && \
@@ -1101,7 +1098,7 @@ cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
-
+sudo shutdown -h now
 `;
   const params = id => ({
     InstanceCount: 1,
@@ -1123,7 +1120,7 @@ node index.js
       ImageId: 'ami-3511515',
       UserData: new Buffer(USER_DATA(id)).toString('base64')
     },
-    SpotPrice: "0.0043",
+    SpotPrice: "0.0041",
     Type: "one-time"
   });
   expect(gen.next(2).value).toEqual(call(uuidv4));

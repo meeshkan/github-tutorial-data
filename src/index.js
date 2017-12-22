@@ -4,6 +4,7 @@ import AWS from 'aws-sdk';
 import axios from 'axios';
 import urlparse from 'url-parse';
 import uuidv4 from 'uuid/v4';
+import _ from 'lodash';
 import { applyMiddleware, createStore } from 'redux';
 import createSagaMiddleware from 'redux-saga';
 import githubSaga from './github-saga';
@@ -32,7 +33,7 @@ export default async () => {
     }, (e, r) => e ? reject(e) : resolve(JSON.parse(r.Payload))));
     const env = populateEnvFromMonitorData(monitorData, process.env);
     if (env.SHOULD_STOP_GITHUB_TUTORIAL_EXECUTION) {
-      return;
+      process.exit(2);
     }
     env.RAVEN_URL && Raven.config(env.RAVEN_URL).install();
     const connection = mysql.createConnection({
@@ -71,7 +72,7 @@ export default async () => {
     store.dispatch(putEnv(env));
     store.dispatch(putRemaining(parseInt(limit.data.rate.remaining)));
     console.log(`starting batch with ${limit.data.rate.remaining}`);
-    if (env.IS_INITIAL && JSON.parse(env.IS_INITIAL)) {   
+    if (env.START_REPO) {   
       store.dispatch(initialAction(parseInt(env.START_REPO)));
     } else {
       store.dispatch(getTasks(limit.data.rate.remaining, true));

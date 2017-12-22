@@ -120,7 +120,6 @@ export function* endScriptSideEffect() {
       const uniqueId = yield call(uuidv4);
       const USER_DATA = `#!/bin/bash
 export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
-export SCRIPT_EPOCH="${parseInt(env.SCRIPT_EPOCH || 0) + 1}" && \
 export RAVEN_URL="${env.RAVEN_URL}" && \
 export MY_SQL_HOST="${env.MY_SQL_HOST}" && \
 export MY_SQL_PORT="${env.MY_SQL_PORT}" && \
@@ -129,7 +128,6 @@ export MY_SQL_PASSWORD="${env.MY_SQL_PASSWORD}" && \
 export MY_SQL_DATABASE="${env.MY_SQL_DATABASE}" && \
 export MY_SQL_SSL="${env.MY_SQL_SSL}" && \
 export GITHUB_API="${env.GITHUB_API}" && \
-export START_REPO="${env.START_REPO}" && \
 export MAX_REPOS="${env.MAX_REPOS}" && \
 export MAX_COMMITS="${env.MAX_COMMITS}" && \
 export MONITOR_FUNCTION="${env.MONITOR_FUNCTION}" && \
@@ -137,7 +135,7 @@ export MAX_COMPUTATIONS="${env.MAX_COMPUTATIONS}" && \
 export PACKAGE_URL="${env.PACKAGE_URL}" && \
 export PACKAGE_NAME="${env.PACKAGE_NAME}" && \
 export PACKAGE_FOLDER="${env.PACKAGE_FOLDER}" && \
-export GITHUB_API_LIMIT="${env.GITHUB_API_LIMIT}" && \
+export GITHUB_TUTORIAL_SPOT_PRICE="${env.GITHUB_TUTORIAL_SPOT_PRICE}" && \
 export GITHUB_TUTORIAL_DRY_RUN="${env.GITHUB_TUTORIAL_DRY_RUN}" && \
 export GITHUB_TUTORIAL_SUBNET_ID="${env.GITHUB_TUTORIAL_SUBNET_ID}" && \
 export GITHUB_TUTORIAL_SECURITY_GROUP_ID="${env.GITHUB_TUTORIAL_SECURITY_GROUP_ID}" && \
@@ -154,7 +152,7 @@ cd $PACKAGE_FOLDER && \
 wget $PACKAGE_URL && \
 unzip $PACKAGE_NAME && \
 node index.js
-${parseInt(env.SCRIPT_EPOCH || 0) > 2 ? 'sudo shutdown -h now' : ''}
+sudo shutdown -h now
 `;
       const createFunctionParams = {
         InstanceCount: 1,
@@ -163,7 +161,7 @@ ${parseInt(env.SCRIPT_EPOCH || 0) > 2 ? 'sudo shutdown -h now' : ''}
         LaunchSpecification: {
           InstanceType: 't2.micro',
           SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
-          KeyName: env.GITHUB_TUTORIAL_KEY_NAME,
+          ...(env.GITHUB_TUTORIAL_KEY_NAME ? { KeyName: env.GITHUB_TUTORIAL_KEY_NAME } : {}),
           SecurityGroupIds: [
             env.GITHUB_TUTORIAL_SECURITY_GROUP_ID
           ],
@@ -176,7 +174,7 @@ ${parseInt(env.SCRIPT_EPOCH || 0) > 2 ? 'sudo shutdown -h now' : ''}
           ImageId: env.GITHUB_TUTORIAL_IMAGE_ID,
           UserData: new Buffer(USER_DATA).toString('base64')
         },
-        SpotPrice: "0.0043",
+        SpotPrice: env.GITHUB_TUTORIAL_SPOT_PRICE,
         Type: "one-time"
       };
       console.log(`will spawn new server ${uniqueId}`);
