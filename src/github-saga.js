@@ -50,9 +50,6 @@ import {
 
 import {
   sqlPromise,
-  beginTransaction,
-  commitTransaction,
-  rollbackTransaction,
   destroy
 } from './util';
 
@@ -159,7 +156,9 @@ sudo shutdown -h now
         LaunchSpecification: {
           InstanceType: 't2.micro',
           SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
-          ...(env.GITHUB_TUTORIAL_KEY_NAME ? { KeyName: env.GITHUB_TUTORIAL_KEY_NAME } : {}),
+          ...(env.GITHUB_TUTORIAL_KEY_NAME ? {
+            KeyName: env.GITHUB_TUTORIAL_KEY_NAME
+          } : {}),
           SecurityGroupIds: [
             env.GITHUB_TUTORIAL_SECURITY_GROUP_ID
           ],
@@ -223,33 +222,23 @@ export function* getTasksSideEffect(action) {
     meta
   } = action;
   try {
-    yield call(beginTransaction, connection);
-  } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
-    return;
-  }
-  let newActions = null;
-  try {
     const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [GET_COMMIT, GET_COMMITS, GET_LAST, GET_REPO, GET_REPOS, payload]);
-    if (tasks.length > 0) {
-      yield call(sqlPromise, connection, DELETE_DEFERRED_STMT(tasks), tasks.map(t => t.id));
-      newActions = tasks.map(t => JSON.parse(t.json));
+    let i = 0;
+    // this will usually result in less tasks beind deleted than we requested
+    // this will make the job run longer
+    // however, it makes for shorter locks on the DB, which at scale, results in less errors
+    for (; i < tasks.length; i++) {
+      const delRes = yield call(sqlPromise, connection, DELETE_DEFERRED_STMT, [tasks[i].id]);
+      if (delRes.affectedRows) {
+        yield put(JSON.parse(tasks[i].json));
+      }
     }
-    yield call(commitTransaction, connection);
+    if (tasks.length === 0 && meta && meta.endOnNoActions) {
+      yield put(endScript());
+    }
   } catch (e) {
     console.error(e);
     env.RAVEN_URL && Raven.captureException(e);
-    yield call(rollbackTransaction, connection);
-  }
-  if (newActions) {
-    let i = 0;
-    for (; i < newActions.length; i++) {
-      yield put(newActions[i]);
-    }
-  }
-  if ((newActions === null || newActions.length === 0) && meta && meta.endOnNoActions) {
-    yield put(endScript());
   }
 }
 
