@@ -222,7 +222,7 @@ export function* getTasksSideEffect(action) {
     meta
   } = action;
   try {
-    const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [GET_COMMIT, GET_COMMITS, GET_LAST, GET_REPO, GET_REPOS, payload]);
+    const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
     let i = 0;
     // this will usually result in less tasks beind deleted than we requested
     // this will make the job run longer
