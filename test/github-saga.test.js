@@ -1623,7 +1623,11 @@ test('get tasks side effect', () => {
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next({
+    ...state,
+    remaining: 100,
+    executing: 3
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
   ///DELETE FROM deferred WHERE
   expect(gen.next([{
       id: 'x',
@@ -1673,7 +1677,11 @@ test('get tasks side with concurrency issues', () => {
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next({
+    ...state,
+    remaining: 100,
+    executing: 3
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
   ///DELETE FROM deferred WHERE
   expect(gen.next([{
       id: 'x',
@@ -1711,7 +1719,12 @@ test('get tasks side with concurrency issues', () => {
   }));
   
   // STARTS again
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    ...state,
+    remaining: 100,
+    executing: 3
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
   expect(gen.next([{
     id: 'f',
     json: '{"q":"r"}'
@@ -1739,7 +1752,11 @@ test('get tasks side effect without tasks and ending on no actions', () => {
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next({
+    ...state,
+    remaining: 100,
+    executing: 3
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
   expect(gen.next([]).value).toEqual(put({
     type: GET_TASKS_SUCCESS,
     payload: {
@@ -1759,7 +1776,11 @@ test('get tasks side effect without tasks and not ending on no actions', () => {
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next({
+    ...state,
+    remaining: 100,
+    executing: 3
+  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
   expect(gen.next([]).value).toEqual(put({
     type: GET_TASKS_SUCCESS,
     payload: {

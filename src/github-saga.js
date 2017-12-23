@@ -117,40 +117,46 @@ export function* doCleanupSideEffect() {
 
 export function* getTasksSideEffect(action) {
   const {
-    connection,
-    env
-  } = yield select(stateSelector);
-  const {
     payload,
     meta
   } = action;
   try {
     while (true) {
-      const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
-      let i = 0;
-      let j = 0;
-      // this will usually result in less tasks beind deleted than we requested
-      // this will make the job run longer
-      // however, it makes for shorter locks on the DB, which at scale, results in less errors
-      for (; i < tasks.length; i++) {
-        const delRes = yield call(sqlPromise, connection, DELETE_DEFERRED_STMT, [tasks[i].id]);
-        if (delRes.affectedRows) {
-          yield put(JSON.parse(tasks[i].json));
-          j++;
+      const {
+        connection,
+        env,
+        remaining,
+        executing
+      } = yield select(stateSelector);
+      if (remaining > 0) {
+        const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
+        let i = 0;
+        let j = 0;
+        // this will usually result in less tasks beind deleted than we requested
+        // this will make the job run longer
+        // however, it makes for shorter locks on the DB, which at scale, results in less errors
+        for (; i < tasks.length; i++) {
+          const delRes = yield call(sqlPromise, connection, DELETE_DEFERRED_STMT, [tasks[i].id]);
+          if (delRes.affectedRows) {
+            yield put(JSON.parse(tasks[i].json));
+            j++;
+          }
         }
-      }
-      yield put({
-        type: GET_TASKS_SUCCESS,
-        payload: {
-          asked: i,
-          got: j
+        yield put({
+          type: GET_TASKS_SUCCESS,
+          payload: {
+            asked: i,
+            got: j
+          }
+        });
+        if (i === j) {
+          if (i === 0 && meta && meta.endOnNoActions) {
+            yield put(endScript());
+          }
+          break;
         }
-      });
-      if (i === j) {
-        if (i === 0 && meta && meta.endOnNoActions) {
-          yield put(endScript());
-        }
-        break;
+      } else if (executing <= 0) {
+        yield put(endScript());
       }
     }
   } catch (e) {
