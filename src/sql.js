@@ -8,7 +8,6 @@ export const INCREASE_EXECUTING_STATEMENT = 'INSERT INTO executing (id) VALUES (
 export const SELECT_EXECUTING_STATEMENT = 'SELECT COUNT(*) AS executing FROM executing;';
 export const DECREASE_EXECUTING_STATEMENT = 'DELETE FROM executing WHERE id = ?;';
 
-//uuid, JSON.stringify(payload), env.GITHUB_TUTORIAL_UNIQUE_ID, timestamp, error ? JSON.stringify(error) : null, deferred ? 1 : 0
 export const _GENERIC_LOG_COLUMNS = 'actionId, payload, serverId, timestamp, error, deferred';
 export const _GENERIC_LOG_VALUES = '?,?,?,?,?,?';
 export const GET_COMMITS_LOG_INSERT_STMT = `INSERT INTO get_commits_log (computationPage,computationCommitCount,computationId,computationOwner,computationRepo,${_GENERIC_LOG_COLUMNS}) VALUES (?,?,?,?,?,${_GENERIC_LOG_VALUES});`;

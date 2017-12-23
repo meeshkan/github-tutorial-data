@@ -72,15 +72,15 @@ export default async () => {
       await sqlPromise(connection, 'CREATE TABLE deferred (id VARCHAR(36) PRIMARY KEY, action VARCHAR(32), json text);'); // create deferred table
       await sqlPromise(connection, 'CREATE TABLE executing (id VARCHAR(36) PRIMARY KEY);'); // a global state machine for the number of executing servers
       const _GENERIC_LOG_COLUMNS = 'actionId VARCHAR(36), payload TEXT, serverId VARCHAR(36), timestamp BIGINT, error TEXT, deferred TINYINT';
-      await sqlPromise(connection, `CREATE TABLE get_commits_log (id INT NOT NULL AUTO_INCREMENT, computationPage INT, computationCommitCount INT, computationId BIGINT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`;
-      await sqlPromise(connection, `CREATE TABLE get_commit_log (id INT NOT NULL AUTO_INCREMENT, computationId BIGINT, computationSHA VARCHAR(40), computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`;
-      await sqlPromise(connection, `CREATE TABLE get_repos_log (id INT NOT NULL AUTO_INCREMENT, computationSince INT, computationReposCount VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`;
-      await sqlPromise(connection, `CREATE TABLE get_repo_log (id INT NOT NULL AUTO_INCREMENT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`;
-      await sqlPromise(connection, `CREATE TABLE get_last_log (id INT NOT NULL AUTO_INCREMENT, computationId BIGINT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`;
-      await sqlPromise(connection, 'CREATE TABLE end_script_error_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error VARCHAR(36), timestamp BIGINT, PRIMARY KEY (id));';
-      await sqlPromise(connection, 'CREATE TABLE spawn_server_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), spawnId VARCHAR(36), timestamp BIGINT, PRIMARY KEY (id));';
-      await sqlPromise(connection, 'CREATE TABLE get_tasks_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), asked INT, got INT, timestamp BIGINT);');
-      await sqlPromise(connection, 'CREATE TABLE get_tasks_failure_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error TEXT, timestamp BIGINT);');
+      await sqlPromise(connection, `CREATE TABLE get_commits_log (id INT NOT NULL AUTO_INCREMENT, computationPage INT, computationCommitCount INT, computationId BIGINT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`);
+      await sqlPromise(connection, `CREATE TABLE get_commit_log (id INT NOT NULL AUTO_INCREMENT, computationId BIGINT, computationSHA VARCHAR(40), computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`);
+      await sqlPromise(connection, `CREATE TABLE get_repos_log (id INT NOT NULL AUTO_INCREMENT, computationSince INT, computationReposCount VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`);
+      await sqlPromise(connection, `CREATE TABLE get_repo_log (id INT NOT NULL AUTO_INCREMENT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`);
+      await sqlPromise(connection, `CREATE TABLE get_last_log (id INT NOT NULL AUTO_INCREMENT, computationId BIGINT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`);
+      await sqlPromise(connection, 'CREATE TABLE end_script_error_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error VARCHAR(36), timestamp BIGINT, PRIMARY KEY (id));');
+      await sqlPromise(connection, 'CREATE TABLE spawn_server_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), spawnId VARCHAR(36), timestamp BIGINT, PRIMARY KEY (id));');
+      await sqlPromise(connection, 'CREATE TABLE get_tasks_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), asked INT, got INT, timestamp BIGINT, PRIMARY KEY (id));');
+      await sqlPromise(connection, 'CREATE TABLE get_tasks_failure_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error TEXT, timestamp BIGINT, PRIMARY KEY (id));');
     }
     const sagaMiddleware = createSagaMiddleware();
     const store = applyMiddleware(endScriptMiddleware, deferralMiddleware, sagaMiddleware)(createStore)(reducers);
