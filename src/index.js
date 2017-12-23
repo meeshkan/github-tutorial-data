@@ -79,8 +79,8 @@ export default async () => {
       await sqlPromise(connection, `CREATE TABLE get_last_log (id INT NOT NULL AUTO_INCREMENT, computationId BIGINT, computationOwner VARCHAR(128), computationRepo VARCHAR(128), ${_GENERIC_LOG_COLUMNS}, PRIMARY KEY (id));`;
       await sqlPromise(connection, 'CREATE TABLE end_script_error_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error VARCHAR(36), timestamp BIGINT, PRIMARY KEY (id));';
       await sqlPromise(connection, 'CREATE TABLE spawn_server_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), spawnId VARCHAR(36), timestamp BIGINT, PRIMARY KEY (id));';
-        await sqlPromise(connection, 'CREATE TABLE get_tasks_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), asked INT, got INT, timestamp BIGINT) VALUES (?,?,?,?);');
-        await sqlPromise(connection, 'CREATE TABLE get_tasks_failure_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error TEXT, timestamp BIGINT) VALUES (?,?,?);');
+      await sqlPromise(connection, 'CREATE TABLE get_tasks_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), asked INT, got INT, timestamp BIGINT);');
+      await sqlPromise(connection, 'CREATE TABLE get_tasks_failure_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error TEXT, timestamp BIGINT);');
     }
     const sagaMiddleware = createSagaMiddleware();
     const store = applyMiddleware(endScriptMiddleware, deferralMiddleware, sagaMiddleware)(createStore)(reducers);
