@@ -31,13 +31,11 @@ export default store => next => action => {
       store.dispatch(increaseExecutionCount());
       store.dispatch(decreaseRemaining());
       if (remaining > 0) {
-        console.log(`remaining ${remaining} and letting action through`);
         // if we have remaining capacity, we decrease capacity by one and execute
         // because getState() and store.dispatch will be run on the same node tick,
         // we can be confident that there will not be concurrency issues
         next(action);
       } else {
-        console.log(`remaining ${remaining} and deferring action`);
         // we defer the action
         store.dispatch(deferAction(action));
       }

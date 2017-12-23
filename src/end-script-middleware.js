@@ -17,7 +17,6 @@ export default store => next => action => {
       if (scriptEnded) {
         return;
       }
-      console.log("sending end script action to middleware");
       // cascade to default otherwise
     default:
       next(action);

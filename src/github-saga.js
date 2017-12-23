@@ -1,13 +1,30 @@
 import {
   GET_REPO,
+  GET_REPO_SUCCESS,
+  GET_REPO_FAILURE,
   GET_REPOS,
+  GET_REPOS_SUCCESS,
+  GET_REPOS_FAILURE,
   GET_LAST,
+  GET_LAST_SUCCESS,
+  GET_LAST_FAILURE,
   GET_COMMIT,
+  GET_COMMIT_SUCCESS,
+  GET_COMMIT_FAILURE,
   GET_COMMITS,
+  GET_COMMITS_SUCCESS,
+  GET_COMMITS_FAILURE,
   GET_TASKS,
+  GET_TASKS_SUCCESS,
+  GET_TASKS_FAILURE,
   DO_CLEANUP,
   END_SCRIPT,
   DEFER_ACTION,
+  DEFER_ACTION_SUCCESS,
+  DEFER_ACTION_FAILURE,
+  SPAWN_SERVER_SUCCESS,
+  END_SCRIPT_FAILURE,
+  SCRIPT_NO_LONGER_NEEDS_CONNECTION,
   getTasks,
   deferAction,
   decreaseRemaining,
@@ -16,8 +33,6 @@ import {
   doCleanup,
   endScript,
 } from './actions';
-
-import Raven from 'raven';
 
 import uuidv4 from 'uuid/v4';
 
@@ -50,20 +65,12 @@ import {
 
 import {
   sqlPromise,
-  destroy
 } from './util';
 
 import AWS from 'aws-sdk';
 
 export const stateSelector = $ => $;
 export const EAI_AGAIN = "EAI_AGAIN";
-
-export const createFunction = (params, env) => new Promise((resolve, reject) => new AWS.EC2({
-  region: env.GITHUB_TUTORIAL_AWS_REGION
-}).requestSpotInstances(params, (e, r) => e ? reject(e) : resolve(r)));
-export const easyMD5 = data => crypto.createHash('md5').update(data).digest("hex").substring(0, 8);
-
-export const exitProcess = () => process.exit(0);
 
 export function* deferActionSideEffect(action) {
   const {
@@ -74,123 +81,19 @@ export function* deferActionSideEffect(action) {
     const {
       payload
     } = action;
-    const uuid = yield call(uuidv4);
-    yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [uuid, payload.type, JSON.stringify(payload)]);
+    yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [payload.meta.uuid, payload.type, JSON.stringify(payload)]);
+    yield put({
+      type: DEFER_ACTION_SUCCESS,
+      payload
+    });
   } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
+    yield put({
+      type: DEFER_ACTION_FAILURE,
+      payload,
+      error: e
+    });
   } finally {
     yield put(doCleanup());
-  }
-}
-
-export const getFunctionsToLaunch = (unfulfilled, executing, maxComputations) => {
-  if (unfulfilled === 0) {
-    return 0;
-  }
-  return 1 + (Math.random() > executing / maxComputations ? 1 : 0);
-}
-
-export function* endScriptSideEffect() {
-  const {
-    connection,
-    env
-  } = yield select(stateSelector);
-  try {
-    // the bloc below is laborious but necessary to keep the number of servers down
-    // otherwise, we could get into the situation where we spawn too many servers
-    // basically, if we have unfulfilled jobs, then we taper off the number of launched servers once we get to half max capacity
-    // this will result in a bit of waste in the end but it is easier than other types of bookkeeping
-    const _unfulfilled = yield call(sqlPromise, connection, SELECT_UNFULFILLED_STMT, []); // get how many unfulfilled functions there are
-    const unfulfilled = _unfulfilled.length > 0 ? parseInt(_unfulfilled[0].unfulfilled || 0) : 0;
-    const _executing = yield call(sqlPromise, connection, SELECT_EXECUTING_STATEMENT, []); // how many jobs are executing
-    const executing = parseInt(_executing[0].executing);
-    yield call(sqlPromise, connection, DECREASE_EXECUTING_STATEMENT, [env.GITHUB_TUTORIAL_UNIQUE_ID]); // we decrease the number of executing jobs
-    const maxComputations = parseInt(env.MAX_COMPUTATIONS || 0);
-    const functionsToLaunch = yield call(getFunctionsToLaunch, unfulfilled, executing, maxComputations);
-    // we don't need the connection anymore, so we release it to the pool
-    let i = 0;
-    for (; i < functionsToLaunch; i++) {
-      const uniqueId = yield call(uuidv4);
-      const USER_DATA = `#!/bin/bash
-export GITHUB_TUTORIAL_UNIQUE_ID="${uniqueId}" && \
-export RAVEN_URL="${env.RAVEN_URL}" && \
-export MY_SQL_HOST="${env.MY_SQL_HOST}" && \
-export MY_SQL_PORT="${env.MY_SQL_PORT}" && \
-export MY_SQL_USERNAME="${env.MY_SQL_USERNAME}" && \
-export MY_SQL_PASSWORD="${env.MY_SQL_PASSWORD}" && \
-export MY_SQL_DATABASE="${env.MY_SQL_DATABASE}" && \
-export MY_SQL_SSL="${env.MY_SQL_SSL}" && \
-export GITHUB_API="${env.GITHUB_API}" && \
-export MAX_REPOS="${env.MAX_REPOS}" && \
-export MAX_COMMITS="${env.MAX_COMMITS}" && \
-export MONITOR_FUNCTION="${env.MONITOR_FUNCTION}" && \
-export MAX_COMPUTATIONS="${env.MAX_COMPUTATIONS}" && \
-export PACKAGE_URL="${env.PACKAGE_URL}" && \
-export PACKAGE_NAME="${env.PACKAGE_NAME}" && \
-export PACKAGE_FOLDER="${env.PACKAGE_FOLDER}" && \
-export GITHUB_TUTORIAL_AWS_REGION="${env.GITHUB_TUTORIAL_AWS_REGION}" && \
-export GITHUB_TUTORIAL_SPOT_PRICE="${env.GITHUB_TUTORIAL_SPOT_PRICE}" && \
-export GITHUB_TUTORIAL_DRY_RUN="${env.GITHUB_TUTORIAL_DRY_RUN}" && \
-export GITHUB_TUTORIAL_SUBNET_ID="${env.GITHUB_TUTORIAL_SUBNET_ID}" && \
-export GITHUB_TUTORIAL_SECURITY_GROUP_ID="${env.GITHUB_TUTORIAL_SECURITY_GROUP_ID}" && \
-export GITHUB_TUTORIAL_IAM_INSTANCE_ARN="${env.GITHUB_TUTORIAL_IAM_INSTANCE_ARN}" && \
-export GITHUB_TUTORIAL_IMAGE_ID="${env.GITHUB_TUTORIAL_IMAGE_ID}" && \
-export GITHUB_TUTORIAL_KEY_NAME="${env.GITHUB_TUTORIAL_KEY_NAME}" && \
-cd ~ && \
-curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.6/install.sh | bash && \
-export NVM_DIR="$HOME/.nvm" && \
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && \
-nvm install 6.11.5 && \
-mkdir $PACKAGE_FOLDER && \
-cd $PACKAGE_FOLDER && \
-wget $PACKAGE_URL && \
-unzip $PACKAGE_NAME && \
-node index.js
-sudo shutdown -h now
-`;
-      const createFunctionParams = {
-        InstanceCount: 1,
-        DryRun: JSON.parse(env.GITHUB_TUTORIAL_DRY_RUN || 'false'),
-        InstanceInterruptionBehavior: 'terminate',
-        LaunchSpecification: {
-          InstanceType: 't2.micro',
-          SubnetId: env.GITHUB_TUTORIAL_SUBNET_ID,
-          ...(env.GITHUB_TUTORIAL_KEY_NAME ? {
-            KeyName: env.GITHUB_TUTORIAL_KEY_NAME
-          } : {}),
-          SecurityGroupIds: [
-            env.GITHUB_TUTORIAL_SECURITY_GROUP_ID
-          ],
-          IamInstanceProfile: {
-            Arn: env.GITHUB_TUTORIAL_IAM_INSTANCE_ARN
-          },
-          Monitoring: {
-            Enabled: false
-          },
-          ImageId: env.GITHUB_TUTORIAL_IMAGE_ID,
-          UserData: new Buffer(USER_DATA).toString('base64')
-        },
-        SpotPrice: env.GITHUB_TUTORIAL_SPOT_PRICE,
-        Type: "one-time"
-      };
-      console.log(`will spawn new server ${uniqueId}`);
-      try {
-        yield call(createFunction, createFunctionParams, env);
-      } catch (e) {
-        if (e.code !== 'DryRunOperation') {
-          throw e;
-        }
-      }
-      yield call(sqlPromise, connection, INCREASE_EXECUTING_STATEMENT, [uniqueId]);
-    }
-  } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
-  } finally {
-    yield call(destroy, connection);
-    // a forced exit would be necessary if, for example, the connection does not close
-    yield call(exitProcess);
   }
 }
 
@@ -222,23 +125,40 @@ export function* getTasksSideEffect(action) {
     meta
   } = action;
   try {
-    const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
-    let i = 0;
-    // this will usually result in less tasks beind deleted than we requested
-    // this will make the job run longer
-    // however, it makes for shorter locks on the DB, which at scale, results in less errors
-    for (; i < tasks.length; i++) {
-      const delRes = yield call(sqlPromise, connection, DELETE_DEFERRED_STMT, [tasks[i].id]);
-      if (delRes.affectedRows) {
-        yield put(JSON.parse(tasks[i].json));
+    while (true) {
+      const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
+      let i = 0;
+      let j = 0;
+      // this will usually result in less tasks beind deleted than we requested
+      // this will make the job run longer
+      // however, it makes for shorter locks on the DB, which at scale, results in less errors
+      for (; i < tasks.length; i++) {
+        const delRes = yield call(sqlPromise, connection, DELETE_DEFERRED_STMT, [tasks[i].id]);
+        if (delRes.affectedRows) {
+          yield put(JSON.parse(tasks[i].json));
+          j++;
+        }
+      }
+      yield put({
+        type: GET_TASKS_SUCCESS,
+        payload: {
+          asked: i,
+          got: j
+        }
+      });
+      if (i === j) {
+        if (i === 0 && meta && meta.endOnNoActions) {
+          yield put(endScript());
+        }
+        break;
       }
     }
-    if (tasks.length === 0 && meta && meta.endOnNoActions) {
-      yield put(endScript());
-    }
   } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
+    yield put({
+      type: GET_TASKS_FAILURE,
+      payload: action.payload,
+      error: e
+    });
   }
 }
 
@@ -247,10 +167,11 @@ export function* getRepoSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
+  const {
+    payload,
+    meta
+  } = action;
   try {
-    const {
-      payload
-    } = action;
     const repo = yield call(axios, `${env.GITHUB_API}/repos/${payload._computationOwner}/${payload._computationRepo}`);
     const fork = repo && repo.data ? repo.data.fork : null;
     if (fork) {
@@ -277,22 +198,34 @@ export function* getRepoSideEffect(action) {
     const pushed_at = repo && repo.data && repo.data.pushed_at ? new Date(repo.data.pushed_at).getTime() : null;
     const created_at = repo && repo.data && repo.data.created_at ? new Date(repo.data.created_at).getTime() : null;
     const updated_at = repo && repo.data && repo.data.updated_at ? new Date(repo.data.updated_at).getTime() : null;
-    console.log(`inserting repo ${full_name}`);
     yield call(sqlPromise, connection, INSERT_REPO_STMT, [
       id, owner_login, owner_id, name, full_name, language, forks_count, stargazers_count, watchers_count, subscribers_count, size, has_issues, has_wiki, has_pages, has_downloads, pushed_at, created_at, updated_at,
       owner_login, owner_id, name, full_name, language, forks_count, stargazers_count, watchers_count, subscribers_count, size, has_issues, has_wiki, has_pages, has_downloads, pushed_at, created_at, updated_at
     ]);
+    const uuid = yield call(uuidv4);
     yield put({
       type: GET_LAST,
       payload: {
         _computationId: id,
         _computationOwner: payload._computationOwner,
         _computationRepo: payload._computationRepo
+      },
+      meta: {
+        uuid
       }
     });
+    yield put({
+      type: GET_REPO_SUCCESS,
+      payload,
+      meta,
+    });
   } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
+    yield put({
+      type: GET_REPO_FAILURE,
+      payload,
+      meta,
+      error: e
+    });
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
@@ -306,10 +239,11 @@ export function* getReposSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
+  const {
+    payload,
+    meta
+  } = action;
   try {
-    const {
-      payload
-    } = action;
     const repos = yield call(axios, `${env.GITHUB_API}/repositories?since=${payload._computationSince}`);
     let i = 0;
     if (repos && repos.data) {
@@ -318,11 +252,15 @@ export function* getReposSideEffect(action) {
         if (!useableRepos[i].name || !useableRepos[i].owner || !useableRepos[i].owner.login) {
           continue;
         }
+        const uuid = yield call(uuidv4);
         yield put({
           type: GET_REPO,
           payload: {
             _computationOwner: useableRepos[i].owner.login,
             _computationRepo: useableRepos[i].name
+          },
+          meta: {
+            uuid
           }
         }); // repo data
       }
@@ -333,18 +271,31 @@ export function* getReposSideEffect(action) {
       const since = parseInt(urlparse(next).query.substring(1).split('&').filter(x => x.indexOf('since=') !== -1)[0].split('=')[1]);
       const updatedCount = parseInt(payload._computationReposCount || 0) + useableRepos.length;
       if (updatedCount < parseInt(env.MAX_REPOS)) {
+        const uuid = yield call(uuidv4);
         yield put({
           type: GET_REPOS,
           payload: {
             _computationSince: since,
             _computationReposCount: updatedCount
+          },
+          meta: {
+            uuid
           }
         }); // get next batch of repos
       }
     }
+    yield put({
+      type: GET_REPOS_SUCCESS,
+      payload,
+      meta,
+    });
   } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
+    yield put({
+      type: GET_REPOS_FAILURE,
+      payload,
+      meta,
+      error: e
+    });
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
@@ -358,15 +309,17 @@ export function* getLastSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
+  const {
+    payload,
+    meta
+  } = action;
   try {
-    const {
-      payload
-    } = action;
     const url = `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`;
     const commit = yield call(axios, url);
     if (Object.keys(commit.headers).indexOf('link') !== -1) {
       const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
       const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
+      const uuid = yield call(uuidv4);
       yield put({
         type: GET_COMMITS,
         payload: {
@@ -375,14 +328,24 @@ export function* getLastSideEffect(action) {
           _computationId: payload._computationId,
           _computationOwner: payload._computationOwner,
           _computationRepo: payload._computationRepo
+        },
+        meta: {
+          uuid
         }
       }); // get commits
     }
+    yield put({
+      type: GET_LAST_SUCCESS,
+      payload,
+      meta,
+    });
   } catch (e) {
-    console.error(e);
-    if (!(e.response && e.response.status && (e.response.status === "409" || e.response.status === 409))) {
-      env.RAVEN_URL && Raven.captureException(e);
-    }
+    yield put({
+      type: GET_LAST_FAILURE,
+      payload,
+      meta,
+      error: e
+    });
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
@@ -396,15 +359,17 @@ export function* getCommitsSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
+  const {
+    payload,
+    meta
+  } = action;
   try {
-    const {
-      payload
-    } = action;
     const commits = yield call(axios, `https://api.github.com/repositories/${payload._computationId}/commits?page=${payload._computationPage}`);
     if (commits && commits.data && commits.data.length) {
       let i = 0;
       for (; i < commits.data.length; i++) {
         if (commits.data[i].sha) {
+          const uuid = yield call(uuidv4);
           yield put({
             type: GET_COMMIT,
             payload: {
@@ -412,12 +377,16 @@ export function* getCommitsSideEffect(action) {
               _computationSHA: commits.data[i].sha,
               _computationOwner: payload._computationOwner,
               _computationRepo: payload._computationRepo
+            },
+            meta: {
+              uuid
             }
           }); // commit data;
         }
       }
       const updatedCount = parseInt(payload._computationCommitCount || 0) + commits.data.length;
       if (payload._computationPage > 1 && updatedCount < parseInt(env.MAX_COMMITS)) {
+        const uuid = yield call(uuidv4);
         yield put({
           type: GET_COMMITS,
           payload: {
@@ -426,13 +395,25 @@ export function* getCommitsSideEffect(action) {
             _computationId: payload._computationId,
             _computationOwner: payload._computationOwner,
             _computationRepo: payload._computationRepo
+          },
+          meta: {
+            uuid
           }
         }); // get commits again
       }
     }
+    yield put({
+      type: GET_COMMITS_SUCCESS,
+      payload,
+      meta
+    });
   } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
+    yield put({
+      type: GET_COMMITS_FAILURE,
+      payload,
+      meta,
+      error: e
+    });
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
@@ -446,10 +427,11 @@ export function* getCommitSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
+  const {
+    payload,
+    meta
+  } = action;
   try {
-    const {
-      payload
-    } = action;
     const commit = yield call(axios, `${env.GITHUB_API}/repos/${payload._computationOwner}/${payload._computationRepo}/commits/${payload._computationSHA}`);
     const sha = commit && commit.data ? commit.data.sha : null;
     if (sha === null) {
@@ -472,14 +454,22 @@ export function* getCommitSideEffect(action) {
     const test_additions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.additions || 0)).reduce((a, b) => a + b, 0) : null;
     const test_deletions = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.deletions || 0)).reduce((a, b) => a + b, 0) : null;
     const test_changes = commit && commit.data && commit.data.files ? commit.data.files.filter(f => f.filename && /(^test|[^a-zA-Z]+test|Test)/g.exec(f.filename)).map(f => parseInt(f.changes || 0)).reduce((a, b) => a + b, 0) : null;
-    console.log(`inserting commit ${sha}`);
     yield call(sqlPromise, connection, INSERT_COMMIT_STMT, [
       sha, repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes,
       repo_id, author_name, author_email, author_date, committer_name, committer_email, committer_date, author_login, author_id, committer_login, committer_id, additions, deletions, total, test_additions, test_deletions, test_changes
     ]); // update commit
+    yield put({
+      type: GET_COMMIT_SUCCESS,
+      payload,
+      meta
+    });
   } catch (e) {
-    console.error(e);
-    env.RAVEN_URL && Raven.captureException(e);
+    yield put({
+      type: GET_COMMIT_FAILURE,
+      payload,
+      meta,
+      error: e
+    });
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
@@ -497,7 +487,6 @@ function* githubSaga() {
   yield takeEvery(GET_TASKS, getTasksSideEffect);
   yield takeEvery(DEFER_ACTION, deferActionSideEffect);
   yield takeEvery(DO_CLEANUP, doCleanupSideEffect);
-  yield takeEvery(END_SCRIPT, endScriptSideEffect);
 }
 
 export default githubSaga;

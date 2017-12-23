@@ -16,7 +16,6 @@
     "babel-polyfill": "^6.26.0",
     "lodash": "^4.17.4",
     "mysql": "^2.15.0",
-    "raven": "^2.3.0",
     "redux": "^3.7.2",
     "redux-saga": "^0.16.0",
     "url-parse": "^1.2.0",

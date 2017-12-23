@@ -8,7 +8,13 @@ import {
   getTasks,
   endScript,
   deferAction,
+  incrementLogCount,
+  decreaseLogCount,
+  scriptNoLongerNeedsConnection,
   GET_TASKS,
+  DECREASE_LOG_COUNT,
+  INCREMENT_LOG_COUNT,
+  SCRIPT_NO_LONGER_NEEDS_CONNECTION,
   PUT_CONNECTION,
   PUT_ENV,
   INCREASE_EXECUTION_COUNT,
@@ -85,6 +91,24 @@ test('get tasks and end on no actions', () => {
       endOnNoActions: true
     }
   });
+});
+
+test('script no longer needs connection', ()=>{
+  expect(scriptNoLongerNeedsConnection()).toEqual({
+    type: SCRIPT_NO_LONGER_NEEDS_CONNECTION
+  })
+});
+
+test('increment log count', ()=>{
+  expect(incrementLogCount()).toEqual({
+    type: INCREMENT_LOG_COUNT
+  })
+});
+
+test('decrease log count', ()=>{
+  expect(decreaseLogCount()).toEqual({
+    type: DECREASE_LOG_COUNT
+  })
 });
 
 test('get tasks and do not end on no actions', () => {
