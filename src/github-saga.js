@@ -157,6 +157,9 @@ export function* getTasksSideEffect(action) {
         }
       } else if (executing <= 0) {
         yield put(endScript());
+        break;
+      } else {
+        break;
       }
     }
   } catch (e) {
