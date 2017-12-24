@@ -1,56 +1,12 @@
 import {
-  GET_REPO,
-  GET_REPO_SUCCESS,
-  GET_REPO_FAILURE,
-  GET_REPOS,
-  GET_REPOS_SUCCESS,
-  GET_REPOS_FAILURE,
-  GET_LAST,
-  GET_LAST_SUCCESS,
-  GET_LAST_FAILURE,
-  GET_COMMIT,
-  GET_COMMIT_SUCCESS,
-  GET_COMMIT_FAILURE,
-  GET_COMMITS,
-  GET_COMMITS_SUCCESS,
-  GET_COMMITS_FAILURE,
-  GET_TASKS,
-  GET_TASKS_SUCCESS,
-  GET_TASKS_FAILURE,
-  DO_CLEANUP,
   END_SCRIPT,
-  DEFER_ACTION,
-  DEFER_ACTION_SUCCESS,
-  DEFER_ACTION_FAILURE,
   SPAWN_SERVER_SUCCESS,
   END_SCRIPT_FAILURE,
-  SCRIPT_NO_LONGER_NEEDS_CONNECTION,
-  INCREMENT_LOG_COUNT,
-  DECREASE_LOG_COUNT,
-  scriptNoLongerNeedsConnection,
-  getTasks,
-  deferAction,
-  decreaseRemaining,
-  increaseExecutionCount,
-  decreaseExecutionCount,
-  doCleanup,
-  endScript,
 } from './actions';
 
 import uuidv4 from 'uuid/v4';
 
-import crypto from 'crypto';
-
-import urlparse from 'url-parse';
-
-import axios from 'axios';
-
 import {
-  INSERT_REPO_STMT,
-  INSERT_COMMIT_STMT,
-  INSERT_DEFERRED_STMT,
-  SELECT_DEFERRED_STMT,
-  DELETE_DEFERRED_STMT,
   SELECT_UNFULFILLED_STMT,
   INCREASE_EXECUTING_STATEMENT,
   SELECT_EXECUTING_STATEMENT,
@@ -78,8 +34,6 @@ export const stateSelector = $ => $;
 export const createFunction = (params, env) => new Promise((resolve, reject) => new AWS.EC2({
   region: env.GITHUB_TUTORIAL_AWS_REGION
 }).requestSpotInstances(params, (e, r) => e ? reject(e) : resolve(r)));
-
-export const exitProcess = () => process.exit(0);
 
 export const getFunctionsToLaunch = (unfulfilled, executing, maxComputations) => {
   if (unfulfilled === 0) {
@@ -183,35 +137,32 @@ sudo shutdown -h now
         type: SPAWN_SERVER_SUCCESS,
         payload: uniqueId
       });
+      // this blocks the loop but the slow-down is negligible as we will only ever be spawning
+      // a small number of servers. we want to log it as soon as it happens.
+      yield take(`${uniqueId}_LOGGED`);
     }
   } catch (e) {
     console.error(e);
+    const uuid = yield call(uuidv4);
     yield put({
       type: END_SCRIPT_FAILURE,
+      meta: {
+        uuid
+      },
       error: e
     });
+    yield take(`${uuid}_LOGGED`);
   } finally {
-    yield put(scriptNoLongerNeedsConnection());
-  }
-}
-
-export function* releaseConnectionAndExitProcessSideEffect(action) {
-  const {
-    connection,
-    logCount,
-    scriptNoLongerNeedsConnection
-  } = yield select(stateSelector);
-  if (!logCount && scriptNoLongerNeedsConnection) {
     yield call(destroy, connection);
-    yield call(exitProcess);
+    // this is where the process should exit
+    // if it doesn't it means that there is a bug somewhere in the code
+    // we do not force an exit so that if some connection stays open somewhere,
+    // we can inspect the process logs and see what is blocking the exit
   }
 }
 
 function* gracefulExitSaga() {
   yield takeEvery(END_SCRIPT, endScriptSideEffect);
-  yield takeEvery(SCRIPT_NO_LONGER_NEEDS_CONNECTION, releaseConnectionAndExitProcessSideEffect);
-  yield takeEvery(INCREMENT_LOG_COUNT, releaseConnectionAndExitProcessSideEffect);
-  yield takeEvery(DECREASE_LOG_COUNT, releaseConnectionAndExitProcessSideEffect);
 }
 
 export default gracefulExitSaga;

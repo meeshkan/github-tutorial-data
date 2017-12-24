@@ -1,9 +1,6 @@
 import {
-  increaseExecutionCount,
-  decreaseExecutionCount,
   decreaseRemaining,
   deferAction,
-  doCleanup,
   GET_COMMIT,
   GET_COMMITS,
   GET_LAST,
@@ -28,7 +25,6 @@ export default store => next => action => {
         remaining
       } = store.getState();
       // we begin execution
-      store.dispatch(increaseExecutionCount());
       store.dispatch(decreaseRemaining());
       if (remaining > 0) {
         // if we have remaining capacity, we decrease capacity by one and execute

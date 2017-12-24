@@ -12,7 +12,6 @@ import loggingSaga from './logging-saga';
 import gracefulExitSaga from './graceful-exit-saga';
 import reducers from './reducers';
 import deferralMiddleware from './deferral-middleware';
-import endScriptMiddleware from './end-script-middleware';
 import {
   putRemaining,
   putEnv,
@@ -83,7 +82,7 @@ export default async () => {
       await sqlPromise(connection, 'CREATE TABLE get_tasks_failure_log (id INT NOT NULL AUTO_INCREMENT, serverId VARCHAR(36), error TEXT, timestamp BIGINT, PRIMARY KEY (id));');
     }
     const sagaMiddleware = createSagaMiddleware();
-    const store = applyMiddleware(endScriptMiddleware, deferralMiddleware, sagaMiddleware)(createStore)(reducers);
+    const store = applyMiddleware(deferralMiddleware, sagaMiddleware)(createStore)(reducers);
     sagaMiddleware.run(githubSaga);
     sagaMiddleware.run(loggingSaga);
     sagaMiddleware.run(gracefulExitSaga);
@@ -94,7 +93,7 @@ export default async () => {
     if (env.START_REPO) {   
       store.dispatch(initialAction(parseInt(env.START_REPO), uuidv4()));
     } else {
-      store.dispatch(getTasks(limit.data.rate.remaining, true));
+      store.dispatch(getTasks(true));
     }
   } catch (e) {
     console.error(e);

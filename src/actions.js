@@ -8,14 +8,8 @@ export const PUT_ENV = "PUT_ENV";
 export const GET_TASKS = "GET_TASKS";
 export const PUT_REMAINING = "PUT_REMAINING";
 export const DECREASE_REMAINING = "DECREASE_REMAINING";
-export const INCREASE_EXECUTION_COUNT = "INCREASE_EXECUTION_COUNT";
-export const DECREASE_EXECUTION_COUNT = "DECREASE_EXECUTION_COUNT";
-export const DO_CLEANUP = "DO_CLEANUP";
 export const END_SCRIPT = "END_SCRIPT";
 export const DEFER_ACTION = "DEFER_ACTION";
-export const SCRIPT_NO_LONGER_NEEDS_CONNECTION = "SCRIPT_NO_LONGER_NEEDS_CONNECTION";
-export const INCREMENT_LOG_COUNT = "INCREMENT_LOG_COUNT";
-export const DECREASE_LOG_COUNT = "DECREASE_LOG_COUNT";
 export const GET_REPO_SUCCESS = "GET_REPO_SUCCESS";
 export const GET_REPO_FAILURE = "GET_REPO_FAILURE";
 export const GET_REPOS_SUCCESS = "GET_REPOS_SUCCESS";
@@ -42,26 +36,15 @@ export const endScript = () => ({
   type: END_SCRIPT
 });
 
-export const doCleanup = () => ({
-  type: DO_CLEANUP
-});
-
 export const initialAction = (since, uuid) => ({
   type: GET_REPOS,
   payload: {
     _computationSince: since
   },
   meta: {
-    uuid
+    uuid,
+    isInitial: true
   }
-});
-
-export const increaseExecutionCount = () => ({
-  type: INCREASE_EXECUTION_COUNT
-});
-
-export const decreaseExecutionCount = () => ({
-  type: DECREASE_EXECUTION_COUNT
 });
 
 export const putRemaining = payload => ({
@@ -73,11 +56,10 @@ export const decreaseRemaining = () => ({
   type: DECREASE_REMAINING
 });
 
-export const getTasks = (payload, endOnNoActions) =>({
+export const getTasks = isInitial =>({
   type: GET_TASKS,
-  payload,
   meta: {
-    endOnNoActions
+    isInitial
   }
 });
 
@@ -89,22 +71,4 @@ export const putConnection = payload => ({
 export const putEnv = payload => ({
   type: PUT_ENV,
   payload
-});
-
-export const scriptNoLongerNeedsConnection = () => ({
-  type: SCRIPT_NO_LONGER_NEEDS_CONNECTION
-});
-
-export const incrementLogCount = () => ({
-  type: INCREMENT_LOG_COUNT
-});
-
-export const decreaseLogCount = () => ({
-  type: DECREASE_LOG_COUNT
-});
-
-export const endComputation = (payload, error) => ({
-  type: END_COMPUTATION,
-  payload,
-  ...(error ? {error} : {})
 });

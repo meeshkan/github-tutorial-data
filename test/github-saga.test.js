@@ -16,7 +16,7 @@ import githubSaga, {
   getReposSideEffect,
   getTasksSideEffect,
   deferActionSideEffect,
-  doCleanupSideEffect,
+  doCleanup,
   stateSelector,
 } from '../src/github-saga';
 
@@ -42,7 +42,9 @@ import {
   call,
   put,
   select,
-  takeEvery
+  takeEvery,
+  take,
+  race
 } from 'redux-saga/effects';
 
 import {
@@ -62,16 +64,12 @@ import {
   GET_COMMITS_SUCCESS,
   GET_COMMITS_FAILURE,
   GET_TASKS,
-  INCREASE_EXECUTION_COUNT,
-  DECREASE_EXECUTION_COUNT,
   DECREASE_REMAINING,
   END_SCRIPT,
-  DO_CLEANUP,
   DEFER_ACTION,
   DEFER_ACTION_SUCCESS,
   GET_TASKS_SUCCESS,
   getTasks,
-  doCleanup,
   endScript
 } from '../src/actions';
 
@@ -110,6 +108,36 @@ const state = {
   env: ENV
 }
 
+
+test('get repo side effect face plant', () => {
+  const error = new Error('sad');
+  const payload = {
+    _computationOwner: 'Meeshkan',
+    _computationRepo: 'redux-ize'
+  };
+  const action = {
+    type: GET_REPO,
+    payload,
+    meta: {
+      uuid: 'foo'
+    }
+  };
+  const gen = getRepoSideEffect(action);
+  gen.next();
+  gen.next(state);
+  expect(gen.throw(error).value).toEqual(put({
+    type: GET_REPO_FAILURE,
+    payload,
+    meta: {
+      uuid: 'foo'
+    },
+    error
+  }));
+  expect(gen.next().value).toEqual(take('foo_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
+  expect(gen.next().done).toBe(true);
+});
+
 test('get repo side effect', () => {
   const payload = {
     _computationOwner: 'Meeshkan',
@@ -147,7 +175,14 @@ test('get repo side effect', () => {
       uuid: 'foo'
     }
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  let i = 0;
+  for (; i < 2; i++) {
+    expect(gen.next().value).toEqual(race({
+      'an-id_DONE': take('an-id_DONE'),
+      'foo_LOGGED': take('foo_LOGGED')
+    }));
+  }
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -177,7 +212,8 @@ test('get commit side effect face plant', () => {
     },
     error
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(take('foo_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -208,7 +244,8 @@ test('get commit side effect', () => {
       uuid: 'foo'
     }
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(take('foo_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -223,7 +260,7 @@ test('get last side effect face plant', () => {
     type: GET_LAST,
     payload,
     meta: {
-      uuid: 'foo'
+      uuid: 'bar'
     }
   };
   const gen = getLastSideEffect(action);
@@ -233,11 +270,12 @@ test('get last side effect face plant', () => {
     type: GET_LAST_FAILURE,
     payload,
     meta: {
-      uuid: 'foo'
+      uuid: 'bar'
     },
     error
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(take('bar_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'bar'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -251,7 +289,7 @@ test('get last side effect for empty repo', () => {
     type: GET_LAST,
     payload,
     meta: {
-      uuid: 'foo'
+      uuid: 'happy'
     }
   };
   const gen = getLastSideEffect(action);
@@ -259,14 +297,18 @@ test('get last side effect for empty repo', () => {
   expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repos/mikesol/empty-repo/commits'));
   expect(gen.next({
     headers: {}
-  }).value).toEqual(put({
+  }).value).toEqual(call(uuidv4));
+  expect(gen.next().value).toEqual(put({
     type: GET_LAST_SUCCESS,
     payload,
     meta: {
-      uuid: 'foo'
+      uuid: 'happy'
     }
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(race({
+    'happy_LOGGED': take('happy_LOGGED')
+  }));
+  expect(gen.next().value).toEqual(call(doCleanup, 'happy'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -311,7 +353,14 @@ test('get last side effect', () => {
       uuid: 'foo'
     }
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  let i = 0;
+  for(; i < 2; i++) {
+    expect(gen.next().value).toEqual(race({
+      'my-id_DONE': take('my-id_DONE'),
+      'foo_LOGGED': take('foo_LOGGED')
+    }));
+  }
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -319,30 +368,29 @@ test('get repos side effect face plant', () => {
   const error = new Error('sad');
   const payload = {
     _computationSince: 308249
-
   };
   const action = {
-    type: GET_LAST,
+    type: GET_REPOS,
     payload,
     meta: {
       uuid: 'foo'
     }
   };
-  const gen = getLastSideEffect(action);
+  const gen = getReposSideEffect(action);
   gen.next();
   gen.next(state);
   expect(gen.throw(error).value).toEqual(put({
-    type: GET_LAST_FAILURE,
+    type: GET_REPOS_FAILURE,
     payload,
     meta: {
       uuid: 'foo'
     },
     error
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(take('foo_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
-
 
 test('get repos side effect', () => {
   const payload = {
@@ -364,50 +412,108 @@ test('get repos side effect', () => {
     },
     data: MOCK_GET_REPOS_DATA
   }).value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next('a-id').value).toEqual(call(uuidv4));
+  expect(gen.next('b-id').value).toEqual(call(uuidv4));
+  expect(gen.next('c-id').value).toEqual(call(uuidv4));
+  expect(gen.next('d-id').value).toEqual(call(uuidv4));
+  expect(gen.next('e-id').value).toEqual(call(uuidv4));
+  expect(gen.next('f-id').value).toEqual(call(uuidv4));
+  expect(gen.next('g-id').value).toEqual(call(uuidv4));
+  expect(gen.next('h-id').value).toEqual(call(uuidv4));
+  expect(gen.next('i-id').value).toEqual(call(uuidv4));
+  expect(gen.next('j-id').value).toEqual(call(uuidv4));
+  expect(gen.next('k-id').value).toEqual(call(uuidv4));
+  expect(gen.next('l-id').value).toEqual(call(uuidv4));
+  expect(gen.next('m-id').value).toEqual(call(uuidv4));
+  expect(gen.next('n-id').value).toEqual(call(uuidv4));
+  expect(gen.next('o-id').value).toEqual(call(uuidv4));
+  expect(gen.next('p-id').value).toEqual(call(uuidv4));
+  expect(gen.next('q-id').value).toEqual(call(uuidv4));
+  expect(gen.next('r-id').value).toEqual(call(uuidv4));
+  expect(gen.next('s-id').value).toEqual(call(uuidv4));
+  expect(gen.next('t-id').value).toEqual(call(uuidv4));
+  expect(gen.next('u-id').value).toEqual(call(uuidv4));
+  expect(gen.next('v-id').value).toEqual(call(uuidv4));
+  expect(gen.next('w-id').value).toEqual(call(uuidv4));
+  expect(gen.next('x-id').value).toEqual(call(uuidv4));
+  expect(gen.next('y-id').value).toEqual(call(uuidv4));
+  expect(gen.next('z-id').value).toEqual(call(uuidv4));
+  expect(gen.next('aa-id').value).toEqual(call(uuidv4));
+  expect(gen.next('bb-id').value).toEqual(call(uuidv4));
+  expect(gen.next('cc-id').value).toEqual(call(uuidv4));
+  expect(gen.next('dd-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ee-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ff-id').value).toEqual(call(uuidv4));
+  expect(gen.next('gg-id').value).toEqual(call(uuidv4));
+  expect(gen.next('hh-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ii-id').value).toEqual(call(uuidv4));
+  expect(gen.next('jj-id').value).toEqual(call(uuidv4));
+  expect(gen.next('kk-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ll-id').value).toEqual(call(uuidv4));
+  expect(gen.next('mm-id').value).toEqual(call(uuidv4));
+  expect(gen.next('nn-id').value).toEqual(call(uuidv4));
+  expect(gen.next('oo-id').value).toEqual(call(uuidv4));
+  expect(gen.next('pp-id').value).toEqual(call(uuidv4));
+  expect(gen.next('qq-id').value).toEqual(call(uuidv4));
+  expect(gen.next('rr-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ss-id').value).toEqual(call(uuidv4));
+  expect(gen.next('tt-id').value).toEqual(call(uuidv4));
+  expect(gen.next('uu-id').value).toEqual(call(uuidv4));
+  expect(gen.next('vv-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ww-id').value).toEqual(call(uuidv4));
+  expect(gen.next('xx-id').value).toEqual(call(uuidv4));
+  expect(gen.next('yy-id').value).toEqual(call(uuidv4));
+  expect(gen.next('zz-id').value).toEqual(call(uuidv4));
+  expect(gen.next('aaa-id').value).toEqual(call(uuidv4));
+  expect(gen.next('bbb-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ccc-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ddd-id').value).toEqual(call(uuidv4));
+  expect(gen.next('eee-id').value).toEqual(call(uuidv4));
+  expect(gen.next('fff-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ggg-id').value).toEqual(call(uuidv4));
+  expect(gen.next('hhh-id').value).toEqual(call(uuidv4));
+  expect(gen.next('iii-id').value).toEqual(call(uuidv4));
+  expect(gen.next('jjj-id').value).toEqual(call(uuidv4));
+  expect(gen.next('lll-id').value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "bsy",
       _computationRepo: "easyslider"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'a-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "tns",
       _computationRepo: "ContainerFu"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'b-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "revans",
       _computationRepo: "versioning"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'c-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "sodabrew",
       _computationRepo: "libsieve"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'd-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
   expect(gen.next('mediocre-id').value).toEqual(put({
     type: "GET_REPO",
     payload: {
@@ -415,645 +521,587 @@ test('get repos side effect', () => {
       _computationRepo: "common"
     },
     meta: {
-      uuid: 'mediocre-id'
+      uuid: 'e-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "canadas",
       _computationRepo: "ufo"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'f-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "ysimonson",
       _computationRepo: "oz"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'g-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "crcx",
       _computationRepo: "colors"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'h-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "kyungyonglee",
       _computationRepo: "ClassAd_Csharp"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'i-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "directeur",
       _computationRepo: "socnode"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'j-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "liquuid",
       _computationRepo: "macsmc"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'k-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "ekfriis",
       _computationRepo: "dotfiles"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'l-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "jeremyd",
       _computationRepo: "rest_connection"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'm-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "pshomov",
       _computationRepo: "greendale"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'n-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "anileech",
       _computationRepo: "AniLeech-Development"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'o-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "nriley",
       _computationRepo: "Make-Flashcards"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'p-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "sorah",
       _computationRepo: "sandbox"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'q-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "objcode",
       _computationRepo: "paisley"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'r-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "nskim",
       _computationRepo: "Find-Max-SMBD"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 's-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "Schevo",
       _computationRepo: "xdserver"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 't-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "asolove",
       _computationRepo: "learn-scheme"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'u-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "kevinsheffield",
       _computationRepo: "MonoTouchDemos"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'v-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "SnacksOnAPlane",
       _computationRepo: "debately-site"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'w-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "elitheeli",
       _computationRepo: "RubyCAP"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'x-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "azmaveth",
       _computationRepo: "azmaveth"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'y-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "chorny",
       _computationRepo: "AI-MegaHAL"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'z-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "kjg",
       _computationRepo: "derailleur"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'aa-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "chorny",
       _computationRepo: "Hook-LexWrap"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'bb-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "dascgo",
       _computationRepo: "Twitter-Follower-Search"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'cc-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "taouk66",
       _computationRepo: "fourHundred"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'dd-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "jhsu",
       _computationRepo: "DMS315"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ee-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "juniperoserra",
       _computationRepo: "upfork-particles"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ff-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "leathekd",
       _computationRepo: "plex_railscasts_plugin"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'gg-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "sunspot82",
       _computationRepo: "605.484"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'hh-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "afairley",
       _computationRepo: "OpenGov-Hack-Day-Melting-Pot"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ii-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "jri",
       _computationRepo: "deepamehta3-v0.3"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'jj-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "atgreen",
       _computationRepo: "uClibc-moxie"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'kk-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "MikeThacker",
       _computationRepo: "myGSFN"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'll-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "merchantfraud",
       _computationRepo: "merchantfraud.github.com"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'mm-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "dcrec1",
       _computationRepo: "signal"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'nn-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "dekz",
       _computationRepo: "carto"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'oo-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "Chip000",
       _computationRepo: "EQM"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'pp-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "flyerhzm",
       _computationRepo: "rfetion"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'qq-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "wezm",
       _computationRepo: "Gare-du-Nord"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'rr-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "cedric329",
       _computationRepo: "cedric-music"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ss-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "sumihiro",
       _computationRepo: "iPhoneHTTPProxyServer"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'tt-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "dbuckalew",
       _computationRepo: "gbook"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'uu-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "soudabeh",
       _computationRepo: "project-1"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'vv-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "soudabeh",
       _computationRepo: "1"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ww-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "1989gaurav",
       _computationRepo: "xdc"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'xx-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "mannd",
       _computationRepo: "morbidmeter"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'yy-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "ralsina",
       _computationRepo: "rst-cheatsheet"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'zz-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "pjfitzgibbons",
       _computationRepo: "FonsecaMartialArts.com"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'aaa-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "kenearley",
       _computationRepo: "Tabbox-Module"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'bbb-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "jamiew",
       _computationRepo: "1click-exploitables"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ccc-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "lulurun",
       _computationRepo: "fanni"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ddd-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "azwanmohd",
       _computationRepo: "latex_progress2"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'eee-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "jgm",
       _computationRepo: "rocks"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'fff-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "zacharyp",
       _computationRepo: "Math-Robot"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'ggg-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "woody1983",
       _computationRepo: "Railscoders-for-Rails2.3.3"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'hhh-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "symphonists",
       _computationRepo: "url_segments"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'iii-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPO",
     payload: {
       _computationOwner: "bigbenbt",
       _computationRepo: "math666hw1partb"
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'jjj-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('awesome-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_REPOS",
     payload: {
       _computationSince: 308500,
       _computationReposCount: 62,
     },
     meta: {
-      uuid: 'awesome-id'
+      uuid: 'lll-id'
     }
   }));
 
@@ -1065,9 +1113,394 @@ test('get repos side effect', () => {
     }
   }));
 
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  let i = 0;
+  const raceObj = {
+    'a-id_DONE': take('a-id_DONE'),
+    'b-id_DONE': take('b-id_DONE'),
+    'c-id_DONE': take('c-id_DONE'),
+    'd-id_DONE': take('d-id_DONE'),
+    'e-id_DONE': take('e-id_DONE'),
+    'f-id_DONE': take('f-id_DONE'),
+    'g-id_DONE': take('g-id_DONE'),
+    'h-id_DONE': take('h-id_DONE'),
+    'i-id_DONE': take('i-id_DONE'),
+    'j-id_DONE': take('j-id_DONE'),
+    'k-id_DONE': take('k-id_DONE'),
+    'l-id_DONE': take('l-id_DONE'),
+    'm-id_DONE': take('m-id_DONE'),
+    'n-id_DONE': take('n-id_DONE'),
+    'o-id_DONE': take('o-id_DONE'),
+    'p-id_DONE': take('p-id_DONE'),
+    'q-id_DONE': take('q-id_DONE'),
+    'r-id_DONE': take('r-id_DONE'),
+    's-id_DONE': take('s-id_DONE'),
+    't-id_DONE': take('t-id_DONE'),
+    'u-id_DONE': take('u-id_DONE'),
+    'v-id_DONE': take('v-id_DONE'),
+    'w-id_DONE': take('w-id_DONE'),
+    'x-id_DONE': take('x-id_DONE'),
+    'y-id_DONE': take('y-id_DONE'),
+    'z-id_DONE': take('z-id_DONE'),
+    'aa-id_DONE': take('aa-id_DONE'),
+    'bb-id_DONE': take('bb-id_DONE'),
+    'cc-id_DONE': take('cc-id_DONE'),
+    'dd-id_DONE': take('dd-id_DONE'),
+    'ee-id_DONE': take('ee-id_DONE'),
+    'ff-id_DONE': take('ff-id_DONE'),
+    'gg-id_DONE': take('gg-id_DONE'),
+    'hh-id_DONE': take('hh-id_DONE'),
+    'ii-id_DONE': take('ii-id_DONE'),
+    'jj-id_DONE': take('jj-id_DONE'),
+    'kk-id_DONE': take('kk-id_DONE'),
+    'll-id_DONE': take('ll-id_DONE'),
+    'mm-id_DONE': take('mm-id_DONE'),
+    'nn-id_DONE': take('nn-id_DONE'),
+    'oo-id_DONE': take('oo-id_DONE'),
+    'pp-id_DONE': take('pp-id_DONE'),
+    'qq-id_DONE': take('qq-id_DONE'),
+    'rr-id_DONE': take('rr-id_DONE'),
+    'ss-id_DONE': take('ss-id_DONE'),
+    'tt-id_DONE': take('tt-id_DONE'),
+    'uu-id_DONE': take('uu-id_DONE'),
+    'vv-id_DONE': take('vv-id_DONE'),
+    'ww-id_DONE': take('ww-id_DONE'),
+    'xx-id_DONE': take('xx-id_DONE'),
+    'yy-id_DONE': take('yy-id_DONE'),
+    'zz-id_DONE': take('zz-id_DONE'),
+    'aaa-id_DONE': take('aaa-id_DONE'),
+    'bbb-id_DONE': take('bbb-id_DONE'),
+    'ccc-id_DONE': take('ccc-id_DONE'),
+    'ddd-id_DONE': take('ddd-id_DONE'),
+    'eee-id_DONE': take('eee-id_DONE'),
+    'fff-id_DONE': take('fff-id_DONE'),
+    'ggg-id_DONE': take('ggg-id_DONE'),
+    'hhh-id_DONE': take('hhh-id_DONE'),
+    'iii-id_DONE': take('iii-id_DONE'),
+    'jjj-id_DONE': take('jjj-id_DONE'),
+    'lll-id_DONE': take('lll-id_DONE'),
+    'foo_LOGGED': take('foo_LOGGED'),
+  };
+  for (; i < Object.keys(raceObj).length; i++) {
+    expect(gen.next().value).toEqual(race(raceObj));
+  }
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
+
+
+test('get repos side effect with no extra repos', () => {
+  const payload = {
+    _computationSince: 308249,
+    _computationReposCount: 100000000 // force stop
+  };
+  const action = {
+    type: GET_REPOS,
+    payload,
+    meta: {
+      uuid: 'foo'
+    }
+  };
+  const gen = getReposSideEffect(action);
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repositories?since=308249'));
+  expect(gen.next({
+    headers: {
+      link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
+    },
+    data: MOCK_GET_REPOS_DATA.slice(0,10) // 9 useable repos in this
+  }).value).toEqual(call(uuidv4));
+  expect(gen.next('a-id').value).toEqual(call(uuidv4));
+  expect(gen.next('b-id').value).toEqual(call(uuidv4));
+  expect(gen.next('c-id').value).toEqual(call(uuidv4));
+  expect(gen.next('d-id').value).toEqual(call(uuidv4));
+  expect(gen.next('e-id').value).toEqual(call(uuidv4));
+  expect(gen.next('f-id').value).toEqual(call(uuidv4));
+  expect(gen.next('g-id').value).toEqual(call(uuidv4));
+  expect(gen.next('h-id').value).toEqual(call(uuidv4));
+  expect(gen.next('i-id').value).toEqual(call(uuidv4));
+  expect(gen.next('j-id').value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "bsy",
+      _computationRepo: "easyslider"
+    },
+    meta: {
+      uuid: 'a-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "tns",
+      _computationRepo: "ContainerFu"
+    },
+    meta: {
+      uuid: 'b-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "revans",
+      _computationRepo: "versioning"
+    },
+    meta: {
+      uuid: 'c-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "sodabrew",
+      _computationRepo: "libsieve"
+    },
+    meta: {
+      uuid: 'd-id'
+    }
+  }));
+  expect(gen.next('mediocre-id').value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "turian",
+      _computationRepo: "common"
+    },
+    meta: {
+      uuid: 'e-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "canadas",
+      _computationRepo: "ufo"
+    },
+    meta: {
+      uuid: 'f-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "ysimonson",
+      _computationRepo: "oz"
+    },
+    meta: {
+      uuid: 'g-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "crcx",
+      _computationRepo: "colors"
+    },
+    meta: {
+      uuid: 'h-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "kyungyonglee",
+      _computationRepo: "ClassAd_Csharp"
+    },
+    meta: {
+      uuid: 'i-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: GET_REPOS_SUCCESS,
+    payload,
+    meta: {
+      uuid: 'foo'
+    }
+  }));
+
+  let i = 0;
+  // all called functions plus done
+  const raceObj = {
+    'a-id_DONE': take('a-id_DONE'),
+    'b-id_DONE': take('b-id_DONE'),
+    'c-id_DONE': take('c-id_DONE'),
+    'd-id_DONE': take('d-id_DONE'),
+    'e-id_DONE': take('e-id_DONE'),
+    'f-id_DONE': take('f-id_DONE'),
+    'g-id_DONE': take('g-id_DONE'),
+    'h-id_DONE': take('h-id_DONE'),
+    'i-id_DONE': take('i-id_DONE'),
+    'foo_LOGGED': take('foo_LOGGED'),
+  };
+  for (; i < Object.keys(raceObj).length; i++) {
+    expect(gen.next().value).toEqual(race(raceObj));
+  }
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
+  expect(gen.next().done).toBe(true);
+});
+
+
+test('get repos side effect with isInitial true', () => {
+  const payload = {
+    _computationSince: 308249,
+    _computationReposCount: 3 // force stop
+  };
+  const action = {
+    type: GET_REPOS,
+    payload,
+    meta: {
+      uuid: 'foo',
+      isInitial: true
+    }
+  };
+  const gen = getReposSideEffect(action);
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next(state).value).toEqual(call(axios, 'https://api.github.com/repositories?since=308249'));
+  expect(gen.next({
+    headers: {
+      link: '<https://api.github.com/repositories?since=308500>; rel="next", <https://api.github.com/repositories{?since}>; rel="first"'
+    },
+    data: MOCK_GET_REPOS_DATA.slice(0,10) // 9 useable repos in this,
+  }).value).toEqual(call(uuidv4));
+  expect(gen.next('a-id').value).toEqual(call(uuidv4));
+  expect(gen.next('b-id').value).toEqual(call(uuidv4));
+  expect(gen.next('c-id').value).toEqual(call(uuidv4));
+  expect(gen.next('d-id').value).toEqual(call(uuidv4));
+  expect(gen.next('e-id').value).toEqual(call(uuidv4));
+  expect(gen.next('f-id').value).toEqual(call(uuidv4));
+  expect(gen.next('g-id').value).toEqual(call(uuidv4));
+  expect(gen.next('h-id').value).toEqual(call(uuidv4));
+  expect(gen.next('i-id').value).toEqual(call(uuidv4));
+  expect(gen.next('j-id').value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "bsy",
+      _computationRepo: "easyslider"
+    },
+    meta: {
+      uuid: 'a-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "tns",
+      _computationRepo: "ContainerFu"
+    },
+    meta: {
+      uuid: 'b-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "revans",
+      _computationRepo: "versioning"
+    },
+    meta: {
+      uuid: 'c-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "sodabrew",
+      _computationRepo: "libsieve"
+    },
+    meta: {
+      uuid: 'd-id'
+    }
+  }));
+  expect(gen.next('mediocre-id').value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "turian",
+      _computationRepo: "common"
+    },
+    meta: {
+      uuid: 'e-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "canadas",
+      _computationRepo: "ufo"
+    },
+    meta: {
+      uuid: 'f-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "ysimonson",
+      _computationRepo: "oz"
+    },
+    meta: {
+      uuid: 'g-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "crcx",
+      _computationRepo: "colors"
+    },
+    meta: {
+      uuid: 'h-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPO",
+    payload: {
+      _computationOwner: "kyungyonglee",
+      _computationRepo: "ClassAd_Csharp"
+    },
+    meta: {
+      uuid: 'i-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: "GET_REPOS",
+    payload: {
+      _computationSince: 308500,
+      _computationReposCount: 3 + 9, // 9 useable repos
+    },
+    meta: {
+      uuid: 'j-id'
+    }
+  }));
+  expect(gen.next().value).toEqual(put({
+    type: GET_REPOS_SUCCESS,
+    payload,
+    meta: {
+      uuid: 'foo',
+      isInitial: true
+    }
+  }));
+
+  let i = 0;
+  // all called functions plus done
+  const raceObj = {
+    'a-id_DONE': take('a-id_DONE'),
+    'b-id_DONE': take('b-id_DONE'),
+    'c-id_DONE': take('c-id_DONE'),
+    'd-id_DONE': take('d-id_DONE'),
+    'e-id_DONE': take('e-id_DONE'),
+    'f-id_DONE': take('f-id_DONE'),
+    'g-id_DONE': take('g-id_DONE'),
+    'h-id_DONE': take('h-id_DONE'),
+    'i-id_DONE': take('i-id_DONE'),
+    'j-id_DONE': take('j-id_DONE'),
+    'foo_LOGGED': take('foo_LOGGED'),
+  };
+  for (; i < Object.keys(raceObj).length; i++) {
+    expect(gen.next().value).toEqual(race(raceObj));
+  }
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
+  expect(gen.next().value).toEqual(put(endScript()));
+  expect(gen.next().done).toBe(true);
+});
+
 
 test('get commits side effect face plant', () => {
   const error = new Error('sad');
@@ -1095,7 +1528,8 @@ test('get commits side effect face plant', () => {
     },
     error
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(take('foo_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -1122,7 +1556,37 @@ test('get commits side effect', () => {
     },
     data: MOCK_GET_COMMITS_DATA
   }).value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next('a-id').value).toEqual(call(uuidv4));
+  expect(gen.next('b-id').value).toEqual(call(uuidv4));
+  expect(gen.next('c-id').value).toEqual(call(uuidv4));
+  expect(gen.next('d-id').value).toEqual(call(uuidv4));
+  expect(gen.next('e-id').value).toEqual(call(uuidv4));
+  expect(gen.next('f-id').value).toEqual(call(uuidv4));
+  expect(gen.next('g-id').value).toEqual(call(uuidv4));
+  expect(gen.next('h-id').value).toEqual(call(uuidv4));
+  expect(gen.next('i-id').value).toEqual(call(uuidv4));
+  expect(gen.next('j-id').value).toEqual(call(uuidv4));
+  expect(gen.next('k-id').value).toEqual(call(uuidv4));
+  expect(gen.next('l-id').value).toEqual(call(uuidv4));
+  expect(gen.next('m-id').value).toEqual(call(uuidv4));
+  expect(gen.next('n-id').value).toEqual(call(uuidv4));
+  expect(gen.next('o-id').value).toEqual(call(uuidv4));
+  expect(gen.next('p-id').value).toEqual(call(uuidv4));
+  expect(gen.next('q-id').value).toEqual(call(uuidv4));
+  expect(gen.next('r-id').value).toEqual(call(uuidv4));
+  expect(gen.next('s-id').value).toEqual(call(uuidv4));
+  expect(gen.next('t-id').value).toEqual(call(uuidv4));
+  expect(gen.next('u-id').value).toEqual(call(uuidv4));
+  expect(gen.next('v-id').value).toEqual(call(uuidv4));
+  expect(gen.next('w-id').value).toEqual(call(uuidv4));
+  expect(gen.next('x-id').value).toEqual(call(uuidv4));
+  expect(gen.next('y-id').value).toEqual(call(uuidv4));
+  expect(gen.next('z-id').value).toEqual(call(uuidv4));
+  expect(gen.next('aa-id').value).toEqual(call(uuidv4));
+  expect(gen.next('bb-id').value).toEqual(call(uuidv4));
+  expect(gen.next('cc-id').value).toEqual(call(uuidv4));
+  expect(gen.next('dd-id').value).toEqual(call(uuidv4));
+  expect(gen.next('ee-id').value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1131,11 +1595,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'a-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1144,11 +1607,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'b-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1157,11 +1619,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'c-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1170,11 +1631,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'd-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1183,11 +1643,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'e-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1196,11 +1655,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'f-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1209,11 +1667,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'g-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1222,11 +1679,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'h-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1235,11 +1691,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'i-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1248,11 +1703,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'j-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1261,11 +1715,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'k-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1274,11 +1727,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'l-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1287,11 +1739,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'm-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1300,11 +1751,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'n-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1313,11 +1763,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'o-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1326,11 +1775,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'p-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1339,11 +1787,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'q-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1352,11 +1799,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'r-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1365,11 +1811,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 's-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1378,11 +1823,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 't-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1391,11 +1835,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'u-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1404,11 +1847,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'v-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1417,11 +1859,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'w-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1430,11 +1871,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'x-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1443,11 +1883,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'y-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1456,11 +1895,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'z-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1469,11 +1907,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'aa-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1482,11 +1919,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'bb-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1495,11 +1931,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'cc-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('an-id').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: "GET_COMMIT",
     payload: {
       _computationId: 36535156,
@@ -1508,11 +1943,10 @@ test('get commits side effect', () => {
       _computationRepo: "redux"
     },
     meta: {
-      uuid: 'an-id'
+      uuid: 'dd-id'
     }
   }));
-  expect(gen.next().value).toEqual(call(uuidv4));
-  expect(gen.next('my-awesome-uuid').value).toEqual(put({
+  expect(gen.next().value).toEqual(put({
     type: GET_COMMITS,
     payload: {
       _computationPage: 32,
@@ -1522,7 +1956,7 @@ test('get commits side effect', () => {
       _computationRepo: 'redux'
     },
     meta: {
-      uuid: 'my-awesome-uuid'
+      uuid: 'ee-id'
     }
   }));
   expect(gen.next().value).toEqual(put({
@@ -1532,58 +1966,54 @@ test('get commits side effect', () => {
       uuid: 'foo'
     }
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  let i = 0;
+  const raceObj = {
+    'a-id_DONE': take('a-id_DONE'),
+    'b-id_DONE': take('b-id_DONE'),
+    'c-id_DONE': take('c-id_DONE'),
+    'd-id_DONE': take('d-id_DONE'),
+    'e-id_DONE': take('e-id_DONE'),
+    'f-id_DONE': take('f-id_DONE'),
+    'g-id_DONE': take('g-id_DONE'),
+    'h-id_DONE': take('h-id_DONE'),
+    'i-id_DONE': take('i-id_DONE'),
+    'j-id_DONE': take('j-id_DONE'),
+    'k-id_DONE': take('k-id_DONE'),
+    'l-id_DONE': take('l-id_DONE'),
+    'm-id_DONE': take('m-id_DONE'),
+    'n-id_DONE': take('n-id_DONE'),
+    'o-id_DONE': take('o-id_DONE'),
+    'p-id_DONE': take('p-id_DONE'),
+    'q-id_DONE': take('q-id_DONE'),
+    'r-id_DONE': take('r-id_DONE'),
+    's-id_DONE': take('s-id_DONE'),
+    't-id_DONE': take('t-id_DONE'),
+    'u-id_DONE': take('u-id_DONE'),
+    'v-id_DONE': take('v-id_DONE'),
+    'w-id_DONE': take('w-id_DONE'),
+    'x-id_DONE': take('x-id_DONE'),
+    'y-id_DONE': take('y-id_DONE'),
+    'z-id_DONE': take('z-id_DONE'),
+    'aa-id_DONE': take('aa-id_DONE'),
+    'bb-id_DONE': take('bb-id_DONE'),
+    'cc-id_DONE': take('cc-id_DONE'),
+    'dd-id_DONE': take('dd-id_DONE'),
+    'ee-id_DONE': take('ee-id_DONE'),
+    'foo_LOGGED': take('foo_LOGGED')
+  };
+  for (; i < Object.keys(raceObj).length; i++) {
+    expect(gen.next().value).toEqual(race(raceObj));
+  }
+  expect(gen.next().value).toEqual(call(doCleanup, 'foo'));
   expect(gen.next().done).toBe(true);
 });
 
-test('do cleanup when there is remaining capacity and we are executing', () => {
-  const gen = doCleanupSideEffect();
+test('do cleanup', () => {
+  const gen = doCleanup('foobar');
+  expect(gen.next().value).toEqual(call(getTasksSideEffect, {}));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_EXECUTION_COUNT
-  }))
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    remaining: 10,
-    executing: 1
-  }).value).toEqual(put(getTasks(10, false)));
-  expect(gen.next().done).toBe(true);
-});
-
-test('do cleanup when there is remaining capacity and we are done executing', () => {
-  const gen = doCleanupSideEffect();
-  expect(gen.next().value).toEqual(put({
-    type: DECREASE_EXECUTION_COUNT
-  }))
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    remaining: 10,
-    executing: 0
-  }).value).toEqual(put(getTasks(10, true)));
-  expect(gen.next().done).toBe(true);
-});
-
-test('do cleanup when there is no remaining capacity and we are not executing', () => {
-  const gen = doCleanupSideEffect();
-  expect(gen.next().value).toEqual(put({
-    type: DECREASE_EXECUTION_COUNT
-  }))
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    remaining: 0,
-    executing: 1
-  }).done).toEqual(true);
-});
-
-test('do cleanup when there is no remaining capacity and we are done executing', () => {
-  const gen = doCleanupSideEffect();
-  expect(gen.next().value).toEqual(put({
-    type: DECREASE_EXECUTION_COUNT
-  }))
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    remaining: 0,
-    executing: 0
-  }).value).toEqual(put(endScript()));
+    type: 'foobar_DONE'
+  }));
   expect(gen.next().done).toBe(true);
 });
 
@@ -1600,7 +2030,8 @@ test('defer action', () => {
   }
   const gen = deferActionSideEffect(action);
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(call(sqlPromise, CONNECTION, INSERT_DEFERRED_STMT, ['x', 'a', JSON.stringify({
+  expect(gen.next(state).value).toEqual(call(uuidv4));
+  expect(gen.next('deferred-uuid').value).toEqual(call(sqlPromise, CONNECTION, INSERT_DEFERRED_STMT, ['x', 'a', JSON.stringify({
     type: 'a',
     payload: 'b',
     meta: {
@@ -1609,192 +2040,192 @@ test('defer action', () => {
   })]));
   expect(gen.next().value).toEqual(put({
     type: DEFER_ACTION_SUCCESS,
-    payload: action.payload
+    payload: action.payload,
+    meta: {
+      uuid: 'deferred-uuid'
+    }
   }));
-  expect(gen.next().value).toEqual(put(doCleanup()));
+  expect(gen.next().value).toEqual(take('deferred-uuid_LOGGED'));
+  expect(gen.next().value).toEqual(call(doCleanup, 'x'));
   expect(gen.next().done).toEqual(true);
 });
 
-test('get tasks side effect', () => {
-  const gen = getTasksSideEffect({
-    payload: 3,
-    meta: {
-      endOnNoActions: true
-    }
-  });
+test('get tasks side effect with remaining capacity', () => {
+  const gen = getTasksSideEffect({});
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state,
-    remaining: 100,
-    executing: 3
-  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
-  ///DELETE FROM deferred WHERE
-  expect(gen.next([{
+    remaining: 3
+  }).value).toEqual(call(uuidv4));
+  expect(gen.next('gts').value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next([
+    {
       id: 'x',
-      json: '{"a":"b"}'
+      json: '{"type":"GET_COMMITS","payload":{},"meta":{"uuid":"b"}}'
     },
     {
       id: 'y',
-      json: '{"c":"d"}'
+      json: '{"type":"GET_REPOS","payload":{},"meta":{"uuid":"d"}}'
     },
     {
       id: 'z',
-      json: '{"e":"f"}'
-    },
+      json: '{"type":"GET_OTHER_STUFF","payload":{},"meta":{"uuid":"f"}}'
+    }
   ]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['x']));
   expect(gen.next({
     affectedRows: 1
-  }).value).toEqual(put({
-    "a": "b"
-  }));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['y']));
+  }).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['y']));
   expect(gen.next({
     affectedRows: 1
-  }).value).toEqual(put({
-    "c": "d"
-  }));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['z']));
+  }).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['z']));
   expect(gen.next({
     affectedRows: 1
-  }).value).toEqual(put({
-    "e": "f"
-  }));
+  }).value).toEqual(put({type:"GET_COMMITS",payload:{},meta:{uuid:"b"}}));
+  expect(gen.next().value).toEqual(put({type:"GET_REPOS",payload:{},meta:{uuid:"d"}}));
+  expect(gen.next().value).toEqual(put({type:"GET_OTHER_STUFF",payload:{},meta:{uuid:"f"}}));
   expect(gen.next().value).toEqual(put({
     type: GET_TASKS_SUCCESS,
     payload: {
       asked: 3,
       got: 3
+    },
+    meta: {
+      uuid: 'gts'
     }
   }));
-  expect(gen.next().done).toEqual(true);
-});
-
-test('get tasks side with concurrency issues', () => {
-  const gen = getTasksSideEffect({
-    payload: 3,
-    meta: {
-      endOnNoActions: true
-    }
-  });
+  let i = 0;
+  for (; i < 4; i++) {
+    expect(gen.next().value).toEqual(race({
+      'b_DONE': take('b_DONE'),
+      'd_DONE': take('d_DONE'),
+      'f_DONE': take('f_DONE'),
+      'gts_LOGGED': take('gts_LOGGED')
+    }));
+  }
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state,
-    remaining: 100,
-    executing: 3
-  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
-  ///DELETE FROM deferred WHERE
-  expect(gen.next([{
+    remaining: 0
+  }).done).toEqual(true);
+});
+
+test('get tasks side with concurrency issues and remaining capacity', () => {
+  const gen = getTasksSideEffect({});
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    ...state,
+    remaining: 3
+  }).value).toEqual(call(uuidv4));
+  expect(gen.next('gts').value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next([
+    {
       id: 'x',
-      json: '{"a":"b"}'
+      json: '{"type":"GET_COMMITS","payload":{},"meta":{"uuid":"b"}}'
     },
     {
       id: 'y',
-      json: '{"c":"d"}'
+      json: '{"type":"GET_REPOS","payload":{},"meta":{"uuid":"d"}}'
     },
     {
       id: 'z',
-      json: '{"e":"f"}'
-    },
+      json: '{"type":"GET_OTHER_STUFF","payload":{},"meta":{"uuid":"f"}}'
+    }
   ]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['x']));
   expect(gen.next({
     affectedRows: 1
-  }).value).toEqual(put({
-    "a": "b"
-  }));
-  expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['y']));
+  }).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['y']));
   expect(gen.next({
     affectedRows: 0
   }).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['z']));
   expect(gen.next({
     affectedRows: 1
-  }).value).toEqual(put({
-    "e": "f"
-  }));
+  }).value).toEqual(put({type:"GET_COMMITS",payload:{},meta:{uuid:"b"}}));
+  // skip over event that had no affected rows
+  expect(gen.next().value).toEqual(put({type:"GET_OTHER_STUFF",payload:{},meta:{uuid:"f"}}));
   expect(gen.next().value).toEqual(put({
     type: GET_TASKS_SUCCESS,
     payload: {
       asked: 3,
       got: 2
+    },
+    meta: {
+      uuid: 'gts'
     }
   }));
-  
-  // STARTS again
+  let i = 0;
+  for (; i < 3; i++) {
+    expect(gen.next().value).toEqual(race({
+      'b_DONE': take('b_DONE'),
+      'f_DONE': take('f_DONE'),
+      'gts_LOGGED': take('gts_LOGGED')
+    }));
+  }
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state,
-    remaining: 100,
-    executing: 3
-  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
-  expect(gen.next([{
-    id: 'f',
-    json: '{"q":"r"}'
-  }]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['f']));
+    remaining: 1
+  }).value).toEqual(call(uuidv4));  
+  // STARTS again
+  expect(gen.next('stuff').value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [1]));
+  expect(gen.next([
+    {
+      id: 'm',
+      json: '{"type":"GET_REPOS","payload":{},"meta":{"uuid":"n"}}'
+    }
+  ]).value).toEqual(call(sqlPromise, CONNECTION, 'DELETE FROM deferred WHERE id = ?;', ['m']));
   expect(gen.next({
     affectedRows: 1
-  }).value).toEqual(put({
-    "q": "r"
-  }));
+  }).value).toEqual(put({type:"GET_REPOS",payload:{},meta:{uuid:"n"}}));
   expect(gen.next().value).toEqual(put({
     type: GET_TASKS_SUCCESS,
     payload: {
       asked: 1,
       got: 1
+    },
+    meta: {
+      uuid: 'stuff'
     }
   }));
-  expect(gen.next().done).toEqual(true);
+  i = 0;
+  for (; i < 2; i++) {
+    expect(gen.next().value).toEqual(race({
+      'n_DONE': take('n_DONE'),
+      'stuff_LOGGED': take('stuff_LOGGED')
+    }));
+  }
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    ...state,
+    remaining: 0
+  }).done).toEqual(true);
 });
 
-test('get tasks side effect without tasks and ending on no actions', () => {
+test('get tasks side effect without tasks and isInitial true', () => {
   const gen = getTasksSideEffect({
-    payload: 3,
     meta: {
-      endOnNoActions: true
+      isInitial: true
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state,
-    remaining: 100,
-    executing: 3
-  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
-  expect(gen.next([]).value).toEqual(put({
-    type: GET_TASKS_SUCCESS,
-    payload: {
-      asked: 0,
-      got: 0
-    }
-  }));
-  expect(gen.next().value).toEqual(put(endScript()));
+    remaining: 0
+  }).value).toEqual(put(endScript()));
   expect(gen.next().done).toEqual(true);
 });
 
-test('get tasks side effect without tasks and not ending on no actions', () => {
-  const gen = getTasksSideEffect({
-    payload: 3,
-    meta: {
-      endOnNoActions: false
-    }
-  });
+test('get tasks side effect without tasks and isInitial false', () => {
+  const gen = getTasksSideEffect({});
   expect(gen.next().value).toEqual(select(stateSelector));
   expect(gen.next({
     ...state,
-    remaining: 100,
-    executing: 3
-  }).value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
-  expect(gen.next([]).value).toEqual(put({
-    type: GET_TASKS_SUCCESS,
-    payload: {
-      asked: 0,
-      got: 0
-    }
-  }));
-  expect(gen.next().done).toEqual(true);
+    remaining: 0
+  }).done).toEqual(true);
 });
 
 test('github saga', () => {
   const gen = githubSaga();
   const fullSaga = [
-    gen.next(),
     gen.next(),
     gen.next(),
     gen.next(),
@@ -1810,8 +2241,7 @@ test('github saga', () => {
     takeEvery(GET_REPO, getRepoSideEffect),
     takeEvery(GET_REPOS, getReposSideEffect),
     takeEvery(GET_TASKS, getTasksSideEffect),
-    takeEvery(DEFER_ACTION, deferActionSideEffect),
-    takeEvery(DO_CLEANUP, doCleanupSideEffect)
+    takeEvery(DEFER_ACTION, deferActionSideEffect)
   ];
   let i = 0;
   for (; i < sagaParts.length; i++) {

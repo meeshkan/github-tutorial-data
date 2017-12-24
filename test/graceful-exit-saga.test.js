@@ -38,6 +38,7 @@ import {
 import {
   call,
   put,
+  take,
   select,
   takeEvery
 } from 'redux-saga/effects';
@@ -49,15 +50,10 @@ import {
   GET_COMMIT,
   GET_COMMITS,
   GET_TASKS,
-  INCREMENT_LOG_COUNT,
-  DECREASE_LOG_COUNT,
-  INCREASE_EXECUTION_COUNT,
-  DECREASE_EXECUTION_COUNT,
   DECREASE_REMAINING,
   END_SCRIPT,
   DO_CLEANUP,
   DEFER_ACTION,
-  SCRIPT_NO_LONGER_NEEDS_CONNECTION,
   SPAWN_SERVER_SUCCESS,
   getTasks,
   doCleanup,
@@ -113,7 +109,7 @@ test('end script when we do not have enough tasks to spawn something new', () =>
     executing: 17
   }]).value).toEqual(call(sqlPromise, CONNECTION, DECREASE_EXECUTING_STATEMENT, ['my-unique-id']));
   expect(gen.next().value).toEqual(call(getFunctionsToLaunch, 30, 17, 949));
-  expect(gen.next(0).value).toEqual(put(scriptNoLongerNeedsConnection()));
+  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
   expect(gen.next().done).toBe(true);
 });
 
@@ -209,6 +205,7 @@ sudo shutdown -h now
     type: SPAWN_SERVER_SUCCESS,
     payload: 'another-unique-id'
   }));
+  expect(gen.next().value).toEqual(take('another-unique-id_LOGGED'));
   expect(gen.next().value).toEqual(call(uuidv4));
   expect(gen.next('yet-another-unique-id').value).toEqual(call(createFunction, params('yet-another-unique-id'), ENV));
   expect(gen.next().value).toEqual(call(sqlPromise, CONNECTION, INCREASE_EXECUTING_STATEMENT, ['yet-another-unique-id']));
@@ -216,55 +213,19 @@ sudo shutdown -h now
     type: SPAWN_SERVER_SUCCESS,
     payload: 'yet-another-unique-id'
   }));
-  expect(gen.next().value).toEqual(put(scriptNoLongerNeedsConnection()));
+  expect(gen.next().value).toEqual(take('yet-another-unique-id_LOGGED'));
+  expect(gen.next().value).toEqual(call(destroy, CONNECTION));
   expect(gen.next().done).toBe(true);
 });
 
-test('does not realse connection and exit process because we are still logging',()=>{
-  const gen = releaseConnectionAndExitProcessSideEffect();
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    connection: CONNECTION,
-    logCount: 1,
-    scriptNoLongerNeedsConnection: true
-  }).done).toBe(true);
-});
-
-test('does not realse connection and exit process because we are still running the script',()=>{
-  const gen = releaseConnectionAndExitProcessSideEffect();
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    connection: CONNECTION,
-    logCount: 0,
-    scriptNoLongerNeedsConnection: false
-  }).done).toBe(true);
-});
-
-test('releases connection',()=>{
-  const gen = releaseConnectionAndExitProcessSideEffect();
-  expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next({
-    connection: CONNECTION,
-    logCount: 0,
-    scriptNoLongerNeedsConnection: true
-  }).value).toEqual(call(destroy, CONNECTION));
-  expect(gen.next().value).toEqual(call(exitProcess));
-  expect(gen.next().done).toBe(true);
-});
 
 test('graeful exit saga', () => {
   const gen = gracefulExitSaga();
   const fullSaga = [
-    gen.next(),
-    gen.next(),
-    gen.next(),
     gen.next()
   ].map(x => x.value);
   const sagaParts = [
-    takeEvery(END_SCRIPT, endScriptSideEffect),
-    takeEvery(SCRIPT_NO_LONGER_NEEDS_CONNECTION, releaseConnectionAndExitProcessSideEffect),
-    takeEvery(INCREMENT_LOG_COUNT, releaseConnectionAndExitProcessSideEffect),
-    takeEvery(DECREASE_LOG_COUNT, releaseConnectionAndExitProcessSideEffect)
+    takeEvery(END_SCRIPT, endScriptSideEffect)
   ];
   let i = 0;
   for (; i < sagaParts.length; i++) {

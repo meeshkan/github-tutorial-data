@@ -19,9 +19,7 @@ import {
   DEFER_ACTION_SUCCESS,
   DEFER_ACTION_FAILURE,
   SPAWN_SERVER_SUCCESS,
-  END_SCRIPT_FAILURE,
-  INCREMENT_LOG_COUNT,
-  DECREASE_LOG_COUNT
+  END_SCRIPT_FAILURE
 } from '../src/actions';
 
 import {
@@ -114,6 +112,9 @@ test('deferred action log side effect for get last', () => {
       meta: {
         uuid: 'a'
       }
+    },
+    meta: {
+      uuid: 'happiness'
     }
   };
   const gen = deferredActionLogSideEffect(action);
@@ -123,7 +124,7 @@ test('deferred action log side effect for get last', () => {
     meta: {
       uuid: 'a'
     }
-  }));
+  }, 'happiness'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -136,6 +137,9 @@ test('deferred action log side effect for get repos', () => {
       meta: {
         uuid: 'a'
       }
+    },
+    meta: {
+      uuid: 'serenity'
     }
   };
   const gen = deferredActionLogSideEffect(action);
@@ -145,7 +149,7 @@ test('deferred action log side effect for get repos', () => {
     meta: {
       uuid: 'a'
     }
-  }));
+  }, 'serenity'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -158,6 +162,9 @@ test('deferred action log side effect for get repo', () => {
       meta: {
         uuid: 'a'
       }
+    },
+    meta: {
+      uuid: 'strength'
     }
   };
   const gen = deferredActionLogSideEffect(action);
@@ -167,7 +174,7 @@ test('deferred action log side effect for get repo', () => {
     meta: {
       uuid: 'a'
     }
-  }));
+  }, 'strength'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -180,6 +187,9 @@ test('deferred action log side effect for get commit', () => {
       meta: {
         uuid: 'a'
       }
+    },
+    meta: {
+      uuid: 'tenacity'
     }
   };
   const gen = deferredActionLogSideEffect(action);
@@ -189,7 +199,7 @@ test('deferred action log side effect for get commit', () => {
     meta: {
       uuid: 'a'
     }
-  }));
+  }, 'tenacity'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -205,6 +215,9 @@ test('deferred action log side effect for get commits', () => {
         uuid: 'a'
       },
     },
+    meta: {
+      uuid: 'scrappiness'
+    },
     error
   };
   const gen = deferredActionLogSideEffect(action);
@@ -215,7 +228,7 @@ test('deferred action log side effect for get commits', () => {
       uuid: 'a'
     },
     error
-  }));
+  }, 'scrappiness'));
   expect(gen.next().done).toBe(true);
 });
 
@@ -224,16 +237,16 @@ test('get tasks success', () => {
     payload: {
       asked: 5,
       got: 3
+    },
+    meta: {
+      uuid: 'greatness'
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(100).value).toEqual(call(sqlPromise, CONNECTION, INSERT_GET_TASKS_STMT, ['my-unique-id', 5, 3, 100]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'greatness_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -241,16 +254,16 @@ test('get tasks success', () => {
 test('get tasks failure', () => {
   const error = new Error('foo');
   const gen = getTasksFailureSideEffect({
-    error
+    error,
+    meta: {
+      uuid: 'ferocity'
+    }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(100).value).toEqual(call(sqlPromise, CONNECTION, INSERT_GET_TASKS_FAILURE_STMT, ['my-unique-id', error.stack, 100]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'ferocity_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -260,13 +273,10 @@ test('spawn server log success', () => {
     payload: 'spawned server id'
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(100).value).toEqual(call(sqlPromise, CONNECTION, INSERT_SPAWN_SERVER_LOG_STMT, ['my-unique-id', 'spawned server id', 100]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'spawned server id_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -274,16 +284,16 @@ test('spawn server log success', () => {
 test('end script error', () => {
   const error = new Error('bar');
   const gen = endScriptErrorSideEffect({
-    error
+    error,
+    meta: {
+      uuid: 'gumption'
+    }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(100).value).toEqual(call(sqlPromise, CONNECTION, INSERT_END_SCRIPT_ERROR_STMT, ['my-unique-id', error.stack, 100]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'gumption_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -297,18 +307,15 @@ test('deferred get repos success', () => {
     meta: {
       uuid: 'ugh'
     }
-  });
+  }, 'craziness');
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(100).value).toEqual(call(sqlPromise, CONNECTION, GET_REPOS_LOG_INSERT_STMT, [1000, 5, 'ugh', JSON.stringify({
     _computationSince: 1000,
     _computationReposCount: 5
   }), 'my-unique-id', 100, null, 1]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'craziness_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -324,18 +331,15 @@ test('deferred get repo failure', () => {
       uuid: 'an-id'
     },
     error
-  });
+  }, 'compassion');
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(100).value).toEqual(call(sqlPromise, CONNECTION, GET_REPO_LOG_INSERT_STMT, ['me', 'my-awesome-repo', 'an-id', JSON.stringify({
     _computationOwner: 'me',
     _computationRepo: 'my-awesome-repo'
   }), 'my-unique-id', 100, error.stack, 1]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'compassion_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -352,17 +356,14 @@ test('get last success', () => {
     }
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(123).value).toEqual(call(sqlPromise, CONNECTION, GET_LAST_LOG_INSERT_STMT, [10, 'jane', 'doe', 'meta-id', JSON.stringify({
     _computationId: 10,
     _computationOwner: 'jane',
     _computationRepo: 'doe'
   }), 'my-unique-id', 123, null, 0]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'meta-id_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -383,10 +384,7 @@ test('get commits failure', () => {
     error
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(123).value).toEqual(call(sqlPromise, CONNECTION, GET_COMMITS_LOG_INSERT_STMT, [
     47,
     12,
@@ -407,7 +405,7 @@ test('get commits failure', () => {
     0
   ]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'another-id_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });
@@ -423,21 +421,18 @@ test('get commit failure', () => {
       _computationRepo: 'jones'
     },
     meta: {
-      uuid: 'another-id'
+      uuid: 'famous-id'
     },
     error
   });
   expect(gen.next().value).toEqual(select(stateSelector));
-  expect(gen.next(state).value).toEqual(put({
-    type: INCREMENT_LOG_COUNT
-  }));
-  expect(gen.next().value).toEqual(call(makeTimestamp));
+  expect(gen.next(state).value).toEqual(call(makeTimestamp));
   expect(gen.next(123).value).toEqual(call(sqlPromise, CONNECTION, GET_COMMIT_LOG_INSERT_STMT, [
     123,
     'sha',
     'bob',
     'jones',
-    'another-id',
+    'famous-id',
     JSON.stringify({
       _computationId: 123,
       _computationSHA: 'sha',
@@ -450,7 +445,7 @@ test('get commit failure', () => {
     0
   ]));
   expect(gen.next().value).toEqual(put({
-    type: DECREASE_LOG_COUNT
+    type: 'famous-id_LOGGED'
   }));
   expect(gen.next().done).toBe(true);
 });

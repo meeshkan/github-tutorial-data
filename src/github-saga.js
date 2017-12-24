@@ -28,15 +28,12 @@ import {
   getTasks,
   deferAction,
   decreaseRemaining,
-  increaseExecutionCount,
-  decreaseExecutionCount,
-  doCleanup,
   endScript,
 } from './actions';
 
-import uuidv4 from 'uuid/v4';
+import _ from 'lodash';
 
-import crypto from 'crypto';
+import uuidv4 from 'uuid/v4';
 
 import urlparse from 'url-parse';
 
@@ -72,52 +69,50 @@ import AWS from 'aws-sdk';
 export const stateSelector = $ => $;
 export const EAI_AGAIN = "EAI_AGAIN";
 
+export const uuidsToRace = (...args) => race(_.fromPairs(args.map(x => [x, take(x)])));
+
+export function* doCleanup(uuid) {
+  yield call(getTasksSideEffect, {});
+  yield put({
+    type: `${uuid}_DONE`
+  });
+}
+
 export function* deferActionSideEffect(action) {
   const {
     connection,
     env
   } = yield select(stateSelector);
+  const {
+    payload
+  } = action;
+  const uuid = yield call(uuidv4);
   try {
-    const {
-      payload
-    } = action;
     yield call(sqlPromise, connection, INSERT_DEFERRED_STMT, [payload.meta.uuid, payload.type, JSON.stringify(payload)]);
     yield put({
       type: DEFER_ACTION_SUCCESS,
-      payload
+      payload,
+      meta: {
+        uuid
+      }
     });
   } catch (e) {
     yield put({
       type: DEFER_ACTION_FAILURE,
       payload,
+      meta: {
+        uuid
+      },
       error: e
     });
   } finally {
-    yield put(doCleanup());
+    yield take(`${uuid}_LOGGED`);
+    yield call(doCleanup, payload.meta.uuid);
   }
-}
-
-export function* doCleanupSideEffect() {
-  yield put(decreaseExecutionCount());
-  const {
-    connection,
-    env,
-    remaining,
-    executing
-  } = yield select(stateSelector);
-  if (remaining > 0) {
-    // if we have remaining capacity and we are not done executing, always execute more tasks if possible
-    // otherwise if we are done then we tell the task fetcher to finish things up
-    yield put(getTasks(remaining, executing <= 0));
-  } else if (executing <= 0) {
-    yield put(endScript());
-  }
-  // if we are executing and there is nothing remaining, then we do nothing
 }
 
 export function* getTasksSideEffect(action) {
   const {
-    payload,
     meta
   } = action;
   try {
@@ -125,49 +120,59 @@ export function* getTasksSideEffect(action) {
       const {
         connection,
         env,
-        remaining,
-        executing
+        remaining
       } = yield select(stateSelector);
       if (remaining > 0) {
-        const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [payload]);
+        const uuid = yield call(uuidv4);
+        const tasks = yield call(sqlPromise, connection, SELECT_DEFERRED_STMT, [remaining]);
         let i = 0;
         let j = 0;
-        // this will usually result in less tasks beind deleted than we requested
-        // this will make the job run longer
-        // however, it makes for shorter locks on the DB, which at scale, results in less errors
+        const tasksToPut = [];
         for (; i < tasks.length; i++) {
           const delRes = yield call(sqlPromise, connection, DELETE_DEFERRED_STMT, [tasks[i].id]);
           if (delRes.affectedRows) {
-            yield put(JSON.parse(tasks[i].json));
+            tasksToPut.push(JSON.parse(tasks[i].json));
             j++;
           }
+        }
+        let k = 0;
+        for (; k < j; k++) {
+          yield put(tasksToPut[k]);
         }
         yield put({
           type: GET_TASKS_SUCCESS,
           payload: {
             asked: i,
             got: j
+          },
+          meta: {
+            uuid
           }
         });
-        if (i === j) {
-          if (i === 0 && meta && meta.endOnNoActions) {
-            yield put(endScript());
-          }
-          break;
+        const races = tasksToPut.map(x => `${x.meta.uuid}_DONE`).concat(`${uuid}_LOGGED`);
+        k = 0;
+        for (; k < races.length; k++) {
+          yield uuidsToRace(...races);
         }
-      } else if (executing <= 0) {
-        yield put(endScript());
-        break;
       } else {
         break;
       }
     }
   } catch (e) {
+    const uuid = yield call(uuidv4);
     yield put({
       type: GET_TASKS_FAILURE,
       payload: action.payload,
+      meta: {
+        uuid
+      },
       error: e
     });
+    yield take(`${uuid}_LOGGED`);
+  } finally {
+    if (meta && meta.isInitial) {
+      yield put(endScript());
+    }
   }
 }
 
@@ -228,6 +233,10 @@ export function* getRepoSideEffect(action) {
       payload,
       meta,
     });
+    let i = 0;
+    for (; i < 2; i++) {
+      yield uuidsToRace(`${uuid}_DONE`, `${meta.uuid}_LOGGED`);
+    }
   } catch (e) {
     yield put({
       type: GET_REPO_FAILURE,
@@ -235,11 +244,12 @@ export function* getRepoSideEffect(action) {
       meta,
       error: e
     });
+    yield take(`${meta.uuid}_LOGGED`);
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
   } finally {
-    yield put(doCleanup());
+    yield call(doCleanup, meta.uuid);
   }
 }
 
@@ -255,13 +265,18 @@ export function* getReposSideEffect(action) {
   try {
     const repos = yield call(axios, `${env.GITHUB_API}/repositories?since=${payload._computationSince}`);
     let i = 0;
+    const useableRepos = repos && repos.data ? repos.data.filter(r => !r.fork && r.name && r.owner && r.owner.login) : [];
+    // uuids need to be generated by call upfront so that, if they have an async component, it does not get this function off its tick
+    // max uuids we will need is usableRepos.length + 1
+    const uuids = [];
+    for (; i < useableRepos.length + 1; i++) {
+      const uuid = yield call(uuidv4);
+      uuids.push(uuid);
+    }
+    let getReposCalledAgain = false;
     if (repos && repos.data) {
-      const useableRepos = repos.data.filter(r => !r.fork)
+      i = 0;
       for (; i < useableRepos.length; i++) {
-        if (!useableRepos[i].name || !useableRepos[i].owner || !useableRepos[i].owner.login) {
-          continue;
-        }
-        const uuid = yield call(uuidv4);
         yield put({
           type: GET_REPO,
           payload: {
@@ -269,7 +284,7 @@ export function* getReposSideEffect(action) {
             _computationRepo: useableRepos[i].name
           },
           meta: {
-            uuid
+            uuid: uuids[i]
           }
         }); // repo data
       }
@@ -280,7 +295,7 @@ export function* getReposSideEffect(action) {
       const since = parseInt(urlparse(next).query.substring(1).split('&').filter(x => x.indexOf('since=') !== -1)[0].split('=')[1]);
       const updatedCount = parseInt(payload._computationReposCount || 0) + useableRepos.length;
       if (updatedCount < parseInt(env.MAX_REPOS)) {
-        const uuid = yield call(uuidv4);
+        getReposCalledAgain = true;
         yield put({
           type: GET_REPOS,
           payload: {
@@ -288,7 +303,7 @@ export function* getReposSideEffect(action) {
             _computationReposCount: updatedCount
           },
           meta: {
-            uuid
+            uuid: uuids[uuids.length - 1]
           }
         }); // get next batch of repos
       }
@@ -298,6 +313,11 @@ export function* getReposSideEffect(action) {
       payload,
       meta,
     });
+    i = 0;
+    const races = (getReposCalledAgain ? uuids.slice() : uuids.slice(0, -1)).map(x => `${x}_DONE`).concat(`${meta.uuid}_LOGGED`);
+    for (; i < races.length; i++) {
+      yield uuidsToRace(...races);
+    }
   } catch (e) {
     yield put({
       type: GET_REPOS_FAILURE,
@@ -305,11 +325,15 @@ export function* getReposSideEffect(action) {
       meta,
       error: e
     });
+    yield take(`${meta.uuid}_LOGGED`);
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
   } finally {
-    yield put(doCleanup());
+    yield call(doCleanup, meta.uuid);
+    if (meta.isInitial) {
+      yield put(endScript());
+    }
   }
 }
 
@@ -325,10 +349,12 @@ export function* getLastSideEffect(action) {
   try {
     const url = `https://api.github.com/repos/${payload._computationOwner}/${payload._computationRepo}/commits`;
     const commit = yield call(axios, url);
+    let doingGetCommits = false;
+    const uuid = yield call(uuidv4);
     if (Object.keys(commit.headers).indexOf('link') !== -1) {
       const last = /<(.|\n)*?>/g.exec(commit.headers['link'].split(',').filter(x => x.indexOf('rel="last"') !== -1)[0])[0].replace('<', '').replace('>', '');
       const page = parseInt(urlparse(last).query.substring(1).split('&').filter(x => x.indexOf('page=') !== -1)[0].split('=')[1]);
-      const uuid = yield call(uuidv4);
+      doingGetCommits = true;
       yield put({
         type: GET_COMMITS,
         payload: {
@@ -348,6 +374,11 @@ export function* getLastSideEffect(action) {
       payload,
       meta,
     });
+    let i = 0;
+    const races = (doingGetCommits ? [`${uuid}_DONE`] : []).concat(`${meta.uuid}_LOGGED`);
+    for (; i < races.length; i++) {
+      yield uuidsToRace(...races);
+    }
   } catch (e) {
     yield put({
       type: GET_LAST_FAILURE,
@@ -355,11 +386,12 @@ export function* getLastSideEffect(action) {
       meta,
       error: e
     });
+    yield take(`${meta.uuid}_LOGGED`);
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
   } finally {
-    yield put(doCleanup());
+    yield call(doCleanup, meta.uuid);
   }
 }
 
@@ -374,28 +406,33 @@ export function* getCommitsSideEffect(action) {
   } = action;
   try {
     const commits = yield call(axios, `https://api.github.com/repositories/${payload._computationId}/commits?page=${payload._computationPage}`);
+    const useableCommits = commits && commits.data && commits.data.length ? commits.data.filter(x => x.sha) : [];
+    const uuids = [];
+    let i = 0;
+    for (; i < useableCommits.length + 1; i++) {
+      const uuid = yield call(uuidv4);
+      uuids.push(uuid);
+    }
+    let getCommitsCalledAgain = false;
     if (commits && commits.data && commits.data.length) {
-      let i = 0;
-      for (; i < commits.data.length; i++) {
-        if (commits.data[i].sha) {
-          const uuid = yield call(uuidv4);
-          yield put({
-            type: GET_COMMIT,
-            payload: {
-              _computationId: payload._computationId,
-              _computationSHA: commits.data[i].sha,
-              _computationOwner: payload._computationOwner,
-              _computationRepo: payload._computationRepo
-            },
-            meta: {
-              uuid
-            }
-          }); // commit data;
-        }
+      i = 0;
+      for (; i < useableCommits.length; i++) {
+        yield put({
+          type: GET_COMMIT,
+          payload: {
+            _computationId: payload._computationId,
+            _computationSHA: useableCommits[i].sha,
+            _computationOwner: payload._computationOwner,
+            _computationRepo: payload._computationRepo
+          },
+          meta: {
+            uuid: uuids[i]
+          }
+        }); // commit data;
       }
-      const updatedCount = parseInt(payload._computationCommitCount || 0) + commits.data.length;
+      const updatedCount = parseInt(payload._computationCommitCount || 0) + useableCommits.length;
       if (payload._computationPage > 1 && updatedCount < parseInt(env.MAX_COMMITS)) {
-        const uuid = yield call(uuidv4);
+        getCommitsCalledAgain = true;
         yield put({
           type: GET_COMMITS,
           payload: {
@@ -406,7 +443,7 @@ export function* getCommitsSideEffect(action) {
             _computationRepo: payload._computationRepo
           },
           meta: {
-            uuid
+            uuid: uuids[uuids.length - 1]
           }
         }); // get commits again
       }
@@ -416,6 +453,11 @@ export function* getCommitsSideEffect(action) {
       payload,
       meta
     });
+    const races = (getCommitsCalledAgain ? uuids.slice() : uuids.slice(0, -1)).map(x => `${x}_DONE`).concat(`${meta.uuid}_LOGGED`);
+    i = 0;
+    for (; i < races.length; i++) {
+      yield uuidsToRace(...races);
+    }
   } catch (e) {
     yield put({
       type: GET_COMMITS_FAILURE,
@@ -423,11 +465,12 @@ export function* getCommitsSideEffect(action) {
       meta,
       error: e
     });
+    yield take(`${meta.uuid}_LOGGED`);
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
   } finally {
-    yield put(doCleanup());
+    yield call(doCleanup, meta.uuid);
   }
 }
 
@@ -472,6 +515,7 @@ export function* getCommitSideEffect(action) {
       payload,
       meta
     });
+    yield take(`${meta.uuid}_LOGGED`);
   } catch (e) {
     yield put({
       type: GET_COMMIT_FAILURE,
@@ -479,11 +523,12 @@ export function* getCommitSideEffect(action) {
       meta,
       error: e
     });
+    yield take(`${meta.uuid}_LOGGED`);
     if (e.code && e.code === EAI_AGAIN) {
       yield put(deferAction(action));
     }
   } finally {
-    yield put(doCleanup());
+    yield call(doCleanup, meta.uuid);
   }
 }
 
@@ -495,7 +540,6 @@ function* githubSaga() {
   yield takeEvery(GET_REPOS, getReposSideEffect);
   yield takeEvery(GET_TASKS, getTasksSideEffect);
   yield takeEvery(DEFER_ACTION, deferActionSideEffect);
-  yield takeEvery(DO_CLEANUP, doCleanupSideEffect);
 }
 
 export default githubSaga;

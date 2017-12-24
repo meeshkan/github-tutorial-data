@@ -20,8 +20,6 @@ import {
   DEFER_ACTION_FAILURE,
   SPAWN_SERVER_SUCCESS,
   END_SCRIPT_FAILURE,
-  incrementLogCount,
-  decreaseLogCount
 } from './actions';
 
 import {
@@ -58,19 +56,25 @@ export const makeTimestamp = () => new Date().getTime();
 export function* deferredActionLogSideEffect(action) {
   const {
     payload,
-    error
+    error,
+    meta: {
+      uuid
+    }
   } = action;
   const fn = action.payload.type === GET_LAST ?
     deferredGetLastLoggingSideEffect : action.payload.type === GET_REPOS ?
-    deferredGetReposLoggingSideEffect : action.payload.type ===  GET_REPO ?
+    deferredGetReposLoggingSideEffect : action.payload.type === GET_REPO ?
     deferredGetRepoLoggingSideEffect : action.payload.type === GET_COMMITS ?
     deferredGetCommitsLoggingSideEffect : action.payload.type === GET_COMMIT ?
-    deferredGetCommitLoggingSideEffect : (() =>
-      {throw new Error(`unknown type ${payload.type}`)})();
+    deferredGetCommitLoggingSideEffect : (() => {
+      throw new Error(`unknown type ${payload.type}`)
+    })();
   yield call(fn, {
     ...payload,
-    ...(error ? { error } : {})
-  });
+    ...(error ? {
+      error
+    } : {})
+  }, uuid);
 }
 
 export function* getTasksSuccessSideEffect(action) {
@@ -78,23 +82,27 @@ export function* getTasksSuccessSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
-  if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
-    return;
-  }
   const {
     payload: {
       asked,
       got
+    },
+    meta: {
+      uuid
     }
   } = action;
-  yield put(incrementLogCount());
   try {
+    if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
+      return;
+    }
     const timestamp = yield call(makeTimestamp);
     yield call(sqlPromise, connection, INSERT_GET_TASKS_STMT, [env.GITHUB_TUTORIAL_UNIQUE_ID, asked, got, timestamp]);
   } catch (e) {
     console.error(e);
   } finally {
-    yield put(decreaseLogCount());
+    yield put({
+      type: `${uuid}_LOGGED`
+    });
   }
 }
 
@@ -103,20 +111,24 @@ export function* getTasksFailureSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
-  if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
-    return;
-  }
   const {
-    error
+    error,
+    meta: {
+      uuid
+    }
   } = action;
-  yield put(incrementLogCount());
   try {
+    if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
+      return;
+    }
     const timestamp = yield call(makeTimestamp);
     yield call(sqlPromise, connection, INSERT_GET_TASKS_FAILURE_STMT, [env.GITHUB_TUTORIAL_UNIQUE_ID, error.stack, timestamp]);
   } catch (e) {
     console.error(e);
   } finally {
-    yield put(decreaseLogCount());
+    yield put({
+      type: `${uuid}_LOGGED`
+    });
   }
 }
 
@@ -125,20 +137,21 @@ export function* spawnServerLogSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
-  if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
-    return;
-  }
   const {
     payload
   } = action;
-  yield put(incrementLogCount());
   try {
+    if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
+      return;
+    }
     const timestamp = yield call(makeTimestamp);
     yield call(sqlPromise, connection, INSERT_SPAWN_SERVER_LOG_STMT, [env.GITHUB_TUTORIAL_UNIQUE_ID, payload, timestamp]);
   } catch (e) {
     console.error(e);
   } finally {
-    yield put(decreaseLogCount());
+    yield put({
+      type: `${payload}_LOGGED`
+    });
   }
 }
 
@@ -147,31 +160,32 @@ export function* endScriptErrorSideEffect(action) {
     connection,
     env
   } = yield select(stateSelector);
-  if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
-    return;
-  }
   const {
-    error
+    error,
+    meta: {
+      uuid
+    }
   } = action;
-  yield put(incrementLogCount());
   try {
+    if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
+      return;
+    }
     const timestamp = yield call(makeTimestamp);
     yield call(sqlPromise, connection, INSERT_END_SCRIPT_ERROR_STMT, [env.GITHUB_TUTORIAL_UNIQUE_ID, error.stack, timestamp]);
   } catch (e) {
     console.error(e);
   } finally {
-    yield put(decreaseLogCount());
+    yield put({
+      type: `${uuid}_LOGGED`
+    });
   }
 }
 
-const makeLoggingSideEffect = (insertStmt, payloadDestructurer, deferred) => function*(action) {
+const makeLoggingSideEffect = (insertStmt, payloadDestructurer, deferred) => function*(action, deferredUUID) {
   const {
     connection,
     env
   } = yield select(stateSelector);
-  if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
-    return;
-  }
   const {
     payload,
     meta: {
@@ -179,15 +193,25 @@ const makeLoggingSideEffect = (insertStmt, payloadDestructurer, deferred) => fun
     },
     error
   } = action;
-  const args = payloadDestructurer(payload);
-  yield put(incrementLogCount());
   try {
+    if (!env.WRITE_DEBUG_LOGS_TO_DB || !JSON.parse(env.WRITE_DEBUG_LOGS_TO_DB)) {
+      return;
+    }
+    const args = payloadDestructurer(payload);
     const timestamp = yield call(makeTimestamp);
     yield call(sqlPromise, connection, insertStmt, args.concat([uuid, JSON.stringify(payload), env.GITHUB_TUTORIAL_UNIQUE_ID, timestamp, error ? error.stack : null, deferred ? 1 : 0]));
   } catch (e) {
     console.error(e);
   } finally {
-    yield put(decreaseLogCount());
+    if (deferredUUID) {
+      yield put({
+        type: `${deferredUUID}_LOGGED`
+      });
+    } else {
+      yield put({
+        type: `${uuid}_LOGGED`
+      });
+    }
   }
 }
 
@@ -267,7 +291,7 @@ function* loggingSaga() {
   yield takeEvery(GET_COMMIT_FAILURE, getCommitLoggingSideEffect);
   yield takeEvery(DEFER_ACTION_SUCCESS, deferredActionLogSideEffect);
   yield takeEvery(DEFER_ACTION_FAILURE, deferredActionLogSideEffect);
-  yield takeEvery(SPAWN_SERVER_SUCCESS,  spawnServerLogSideEffect);
+  yield takeEvery(SPAWN_SERVER_SUCCESS, spawnServerLogSideEffect);
   yield takeEvery(END_SCRIPT_FAILURE, endScriptErrorSideEffect);
   yield takeEvery(GET_TASKS_SUCCESS, getTasksSuccessSideEffect);
   yield takeEvery(GET_TASKS_FAILURE, getTasksFailureSideEffect);
