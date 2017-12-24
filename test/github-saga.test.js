@@ -2109,6 +2109,33 @@ test('get tasks side effect with remaining capacity', () => {
   }).done).toEqual(true);
 });
 
+test('get tasks side effect with remaining capacity but no tasks', () => {
+  const gen = getTasksSideEffect({});
+  expect(gen.next().value).toEqual(select(stateSelector));
+  expect(gen.next({
+    ...state,
+    remaining: 3
+  }).value).toEqual(call(uuidv4));
+  expect(gen.next('gts').value).toEqual(call(sqlPromise, CONNECTION, SELECT_DEFERRED_STMT, [3]));
+  expect(gen.next([]).value).toEqual(put({
+    type: GET_TASKS_SUCCESS,
+    payload: {
+      asked: 0,
+      got: 0
+    },
+    meta: {
+      uuid: 'gts'
+    }
+  }));
+  let i = 0;
+  for (; i < 1; i++) {
+    expect(gen.next().value).toEqual(race({
+      'gts_LOGGED': take('gts_LOGGED')
+    }));
+  }
+  expect(gen.next().done).toEqual(true);
+});
+
 test('get tasks side with concurrency issues and remaining capacity', () => {
   const gen = getTasksSideEffect({});
   expect(gen.next().value).toEqual(select(stateSelector));

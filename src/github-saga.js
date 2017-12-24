@@ -154,6 +154,9 @@ export function* getTasksSideEffect(action) {
         for (; k < races.length; k++) {
           yield uuidsToRace(...races);
         }
+        if (!tasks.length) {
+          break;
+        }
       } else {
         break;
       }
